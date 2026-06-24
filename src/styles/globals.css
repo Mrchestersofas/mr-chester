@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --chester-purple: #7F77DD;
+  --chester-purple-dark: #534AB7;
+  --chester-purple-light: #EEEDFE;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #F8F7FC;
+  color: #1a1a2e;
+}
+
+.sidebar-link {
+  @apply flex items-center gap-3 px-4 py-2.5 text-sm text-gray-500 border-l-2 border-transparent transition-all duration-150 cursor-pointer hover:bg-white hover:text-gray-800;
+}
+.sidebar-link.active {
+  @apply bg-white text-gray-900 font-medium border-l-2;
+  border-color: var(--chester-purple);
+  color: var(--chester-purple-dark);
+}
+
+.btn {
+  @apply inline-flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer;
+}
+.btn-primary {
+  @apply text-white border-transparent hover:opacity-90;
+  background: var(--chester-purple);
+}
+.btn-primary:hover { background: var(--chester-purple-dark); }
+
+.card {
+  @apply bg-white border border-gray-100 rounded-xl p-5;
+}
+
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+.badge-pending  { @apply bg-gray-100 text-gray-600; }
+.badge-progress { @apply bg-blue-50 text-blue-700; }
+.badge-ready    { @apply bg-green-50 text-green-700; }
+.badge-urgent   { @apply bg-red-50 text-red-700; }
+.badge-warning  { @apply bg-amber-50 text-amber-700; }
+
+input, select, textarea {
+  @apply w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:border-transparent;
+  --tw-ring-color: var(--chester-purple);
+}
+
+table { @apply w-full text-sm; }
+thead tr { @apply border-b border-gray-100; }
+th { @apply text-left py-3 px-3 text-xs font-medium text-gray-400 uppercase tracking-wide; }
+td { @apply py-3 px-3 border-b border-gray-50; }
+tr:last-child td { @apply border-0; }
+tr:hover td { @apply bg-gray-50/50; }
