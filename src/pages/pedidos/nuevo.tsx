@@ -1,0 +1,1 @@
+export default function NuevoPedido(){return <div>test</div>}

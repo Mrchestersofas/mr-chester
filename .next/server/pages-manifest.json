@@ -1,12 +1,12 @@
 {
   "/_app": "pages/_app.js",
+  "/clientes": "pages/clientes.js",
   "/_error": "pages/_error.js",
-  "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/pedidos": "pages/pedidos.js",
   "/pedidos/nuevo": "pages/pedidos/nuevo.js",
   "/materiales": "pages/materiales.js",
-  "/produccion": "pages/produccion.js",
+  "/pedidos": "pages/pedidos.js",
+  "/": "pages/index.js",
   "/costos": "pages/costos.js",
-  "/clientes": "pages/clientes.js"
+  "/produccion": "pages/produccion.js",
+  "/_document": "pages/_document.js"
 }
