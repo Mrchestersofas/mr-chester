@@ -122,8 +122,7 @@ export default async function handler(req, res) {
   try {
     await resend.emails.send({
       from: 'Mr. Chester ERP <onboarding@resend.dev>',
-      to: ['josephtoledo@gmail.com', 'mrchestercolombia@gmail.com'],
-      subject: `${criticos.length > 0 ? '🚨 URGENTE' : '⚠️ Alerta'} — Stock bajo en bodega · Mr. Chester`,
+      to: ['josephtoledo@gmail.com'],      subject: `${criticos.length > 0 ? '🚨 URGENTE' : '⚠️ Alerta'} — Stock bajo en bodega · Mr. Chester`,
       html,
     })
     res.status(200).json({ ok: true })
