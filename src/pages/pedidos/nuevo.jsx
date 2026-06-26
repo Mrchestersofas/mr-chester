@@ -24,6 +24,8 @@ export default function NuevoPedido() {
     nuevo_ciudad: '',
     nuevo_tel: '',
     nuevo_email: '',
+    abono: '',
+    medio_pago: '',
   })
 
   const prod = productos.find(p => p.id === form.referencia_id)
@@ -71,6 +73,8 @@ export default function NuevoPedido() {
       estado: 'pendiente',
       precio_venta: Number(form.precio_venta),
       observaciones: form.observaciones,
+      abono: Number(form.abono) || 0,
+      medio_pago: form.medio_pago,
     }).select().single()
 
     if (pedido && cliente?.email) {
@@ -219,6 +223,35 @@ export default function NuevoPedido() {
               <input type='date' value={form.fecha_entrega} onChange={e => set('fecha_entrega', e.target.value)} />
             </div>
           </div>
+        </section>
+
+        {/* SECCIÓN: ABONO Y PAGO */}
+        <section>
+          <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Abono</h2>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+            <div>
+              <label className='text-xs text-gray-500 mb-1 block'>Valor del abono COP</label>
+              <input placeholder='Ej: 1000000' value={form.abono} onChange={e => set('abono', e.target.value)} />
+            </div>
+            <div>
+              <label className='text-xs text-gray-500 mb-1 block'>Medio de pago</label>
+              <select value={form.medio_pago} onChange={e => set('medio_pago', e.target.value)}>
+                <option value=''>Seleccionar</option>
+                <option value='efectivo'>Efectivo</option>
+                <option value='transferencia'>Transferencia bancaria</option>
+                <option value='tarjeta_credito'>Tarjeta crédito</option>
+                <option value='tarjeta_debito'>Tarjeta débito</option>
+                <option value='nequi'>Nequi</option>
+                <option value='daviplata'>Daviplata</option>
+              </select>
+            </div>
+          </div>
+          {form.precio_venta && form.abono && (
+            <div className='mt-3 bg-green-50 rounded-lg p-3 text-sm grid grid-cols-2 gap-2'>
+              <div><span className='text-gray-500 text-xs block'>Abono</span><b className='text-green-700'>${Number(form.abono).toLocaleString('es-CO')}</b></div>
+              <div><span className='text-gray-500 text-xs block'>Saldo pendiente</span><b className='text-red-600'>${(Number(form.precio_venta) - Number(form.abono)).toLocaleString('es-CO')}</b></div>
+            </div>
+          )}
         </section>
 
         {/* SECCIÓN: OBSERVACIONES */}
