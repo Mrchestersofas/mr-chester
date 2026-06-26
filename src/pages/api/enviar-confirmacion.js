@@ -113,10 +113,28 @@ export default async function handler(req, res) {
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Observaciones</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.observaciones}</td>
         </tr>` : ''}
+        ${cliente.direccion ? `
         <tr>
-          <td style="padding:16px 0 0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Valor total</td>
-          <td style="padding:16px 0 0;font-size:22px;color:#C9A84C;font-family:Georgia,serif;font-weight:700;">${precioFormateado}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Dirección de entrega</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.direccion}${cliente.ciudad ? ', ' + cliente.ciudad : ''}</td>
+        </tr>` : ''}
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Valor total</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:22px;color:#C9A84C;font-family:Georgia,serif;font-weight:700;">${precioFormateado}</td>
         </tr>
+        ${pedido.abono ? `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Abono recibido</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#2d6a4f;font-family:Arial,sans-serif;font-weight:600;">$${Number(pedido.abono).toLocaleString('es-CO')}${pedido.medio_pago ? ' · ' + pedido.medio_pago.replace('_', ' ') : ''}</td>
+        </tr>
+        <tr>
+          <td style="padding:16px 0 0;font-size:13px;color:#888;font-family:Arial,sans-serif;font-weight:700;">Saldo pendiente</td>
+          <td style="padding:16px 0 0;font-size:18px;color:#c0392b;font-family:Georgia,serif;font-weight:700;">$${(Number(pedido.precio_venta) - Number(pedido.abono)).toLocaleString('es-CO')}</td>
+        </tr>` : `
+        <tr>
+          <td style="padding:16px 0 0;font-size:13px;color:#888;font-family:Arial,sans-serif;font-weight:700;">Saldo pendiente</td>
+          <td style="padding:16px 0 0;font-size:18px;color:#c0392b;font-family:Georgia,serif;font-weight:700;">${precioFormateado}</td>
+        </tr>`}
       </table>
 
       <!-- Info de entrega -->
