@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase, Pedido, Material } from '@/lib/supabase'
-import { EstadoBadge, PrioridadBadge } from '@/components/Badges'
+import { EstadoBadge } from '@/components/Badges'
 import Link from 'next/link'
-import { AlertTriangle, Package, ClipboardList, Wrench, DollarSign, Plus } from 'lucide-react'
+import { AlertTriangle, Package, ClipboardList, Wrench, DollarSign, Plus, ShoppingCart } from 'lucide-react'
 import { format, differenceInDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -15,7 +15,7 @@ export default function Dashboard() {
     async function load() {
       const [{ data: p }, { data: m }] = await Promise.all([
         supabase.from('pedidos').select('*, cliente:clientes(*)').order('created_at', { ascending: false }).limit(10),
-        supabase.from('materiales').select('*').order('nombre'),
+        supabase.from('materiales').select('*').eq('tipo', 'stock').order('nombre'),
       ])
       setPedidos(p || [])
       setMateriales(m || [])
@@ -24,21 +24,52 @@ export default function Dashboard() {
     load()
   }, [])
 
-  const activos = pedidos.filter(p => !['entregado'].includes(p.estado))
-  const enProd  = pedidos.filter(p => ['estructura','tapizado','costura','control_calidad'].includes(p.estado))
-  const alertas = materiales.filter(m => m.stock_actual < m.stock_minimo)
-  const totalMes = pedidos.reduce((s, p) => s + Number(p.precio_venta), 0)
-
+  const activos    = pedidos.filter(p => !['entregado'].includes(p.estado))
+  const enProd     = pedidos.filter(p => ['estructura','tapizado','costura','control_calidad'].includes(p.estado))
+  const alertas    = materiales.filter(m => m.stock_actual < m.stock_minimo)
+  const criticos   = alertas.filter(m => m.stock_actual === 0)
+  const totalMes   = pedidos.reduce((s, p) => s + Number(p.precio_venta), 0)
   const diasRestantes = (fecha: string) => differenceInDays(parseISO(fecha), new Date())
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen text-gray-400 text-sm">
-      Cargando...
-    </div>
+    <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Cargando...</div>
   )
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+
+      {/* BANNER ALERTA CRÍTICA */}
+      {criticos.length > 0 && (
+        <div className="flex items-center gap-3 bg-red-600 text-white rounded-xl px-5 py-4 mb-6">
+          <AlertTriangle size={20} className="flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">⚠️ {criticos.length} material(es) con stock en CERO</p>
+            <p className="text-xs text-red-200 mt-0.5">
+              {criticos.map(m => m.nombre).join(' · ')}
+            </p>
+          </div>
+          <Link href="/compras" className="bg-white text-red-600 text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-red-50 flex-shrink-0">
+            Ver Compras →
+          </Link>
+        </div>
+      )}
+
+      {/* BANNER ALERTA MODERADA */}
+      {criticos.length === 0 && alertas.length > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 mb-6">
+          <AlertTriangle size={18} className="text-amber-600 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-sm text-amber-800">{alertas.length} material(es) por debajo del stock mínimo</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              {alertas.map(m => m.nombre).join(' · ')}
+            </p>
+          </div>
+          <Link href="/compras" className="bg-amber-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-amber-700 flex-shrink-0">
+            Ver Compras →
+          </Link>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -68,21 +99,19 @@ export default function Dashboard() {
           </div>
           <div className="text-2xl font-medium">{enProd.length}</div>
         </div>
-        <div className="card">
+        <Link href="/compras" className="card hover:border-amber-300 transition-colors">
           <div className="flex items-center gap-2 mb-2">
-            <Package size={15} className="text-gray-400" />
+            <ShoppingCart size={15} className={alertas.length > 0 ? 'text-amber-500' : 'text-gray-400'} />
             <span className="text-xs text-gray-400">Alertas de stock</span>
           </div>
-          <div className="text-2xl font-medium text-amber-600">{alertas.length}</div>
-        </div>
+          <div className={`text-2xl font-medium ${alertas.length > 0 ? 'text-amber-600' : ''}`}>{alertas.length}</div>
+        </Link>
         <div className="card">
           <div className="flex items-center gap-2 mb-2">
             <DollarSign size={15} className="text-gray-400" />
             <span className="text-xs text-gray-400">Ingresos registrados</span>
           </div>
-          <div className="text-2xl font-medium">
-            ${(totalMes / 1_000_000).toFixed(1)}M
-          </div>
+          <div className="text-2xl font-medium">${(totalMes / 1_000_000).toFixed(1)}M</div>
         </div>
       </div>
 
@@ -111,21 +140,22 @@ export default function Dashboard() {
         {/* Alertas de materiales */}
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium">Alertas de compras hoy</h2>
-            <Link href="/materiales" className="text-xs text-purple-600 hover:underline">Ver inventario</Link>
+            <h2 className="text-sm font-medium">Alertas de stock</h2>
+            <Link href="/compras" className="text-xs text-purple-600 hover:underline">Ver inventario</Link>
           </div>
           {alertas.length === 0 ? (
             <div className="text-sm text-green-600 bg-green-50 rounded-lg px-4 py-3">
-              ✓ Todo el inventario está en niveles correctos.
+              ✓ Todo el inventario de stock está en niveles correctos.
             </div>
           ) : (
             alertas.map(m => (
-              <div key={m.id} className="flex items-start gap-3 bg-amber-50 rounded-lg px-3 py-2.5 mb-2">
-                <AlertTriangle size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
+              <div key={m.id} className={`flex items-start gap-3 rounded-lg px-3 py-2.5 mb-2 ${m.stock_actual === 0 ? 'bg-red-50' : 'bg-amber-50'}`}>
+                <AlertTriangle size={15} className={`mt-0.5 flex-shrink-0 ${m.stock_actual === 0 ? 'text-red-600' : 'text-amber-600'}`} />
                 <div>
-                  <p className="text-sm font-medium text-amber-800">{m.nombre}</p>
-                  <p className="text-xs text-amber-600">
+                  <p className={`text-sm font-medium ${m.stock_actual === 0 ? 'text-red-800' : 'text-amber-800'}`}>{m.nombre}</p>
+                  <p className={`text-xs ${m.stock_actual === 0 ? 'text-red-600' : 'text-amber-600'}`}>
                     Stock: {m.stock_actual} {m.unidad} — Mínimo: {m.stock_minimo} {m.unidad}
+                    {m.stock_actual === 0 && <span className="ml-1 font-bold">¡EN CERO!</span>}
                   </p>
                 </div>
               </div>
