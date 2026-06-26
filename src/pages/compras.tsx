@@ -129,8 +129,7 @@ function TabInventario() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('materiales').select('*').order('nombre').then(({ data }) => {
-      setMateriales(data || [])
+    supabase.from('materiales').select('*').eq('tipo', 'stock').order('nombre').then(({ data }) => {      setMateriales(data || [])
       setLoading(false)
     })
   }, [])
