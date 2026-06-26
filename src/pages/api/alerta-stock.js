@@ -1,6 +1,4 @@
 // Archivo: src/pages/api/alerta-stock.js
-// Se llama automáticamente cuando se actualiza el stock en inventario
-
 import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -19,6 +17,7 @@ export default async function handler(req, res) {
 
   const fecha = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
   const hora  = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+  const fmt   = (n) => Number(n || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -26,9 +25,8 @@ export default async function handler(req, res) {
 <body style="margin:0;padding:0;background:#f4f1eb;font-family:Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1eb;padding:40px 20px;">
 <tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
-  <!-- Header -->
   <tr>
     <td style="background:#1a1a1a;padding:32px 40px 24px;text-align:center;border-radius:8px 8px 0 0;">
       <h1 style="margin:0;color:#C9A84C;font-size:26px;font-weight:700;letter-spacing:4px;">MR. CHESTER</h1>
@@ -37,7 +35,6 @@ export default async function handler(req, res) {
     </td>
   </tr>
 
-  <!-- Banda -->
   <tr>
     <td style="background:${criticos.length > 0 ? '#dc2626' : '#d97706'};padding:10px 40px;text-align:center;">
       <p style="margin:0;color:#fff;font-size:11px;letter-spacing:2px;font-weight:700;">
@@ -46,7 +43,6 @@ export default async function handler(req, res) {
     </td>
   </tr>
 
-  <!-- Cuerpo -->
   <tr>
     <td style="background:#fff;padding:40px;">
       <p style="margin:0 0 6px;color:#888;font-size:13px;">Fecha: ${fecha} · ${hora}</p>
@@ -66,7 +62,8 @@ export default async function handler(req, res) {
         <tr style="background:#fef2f2;">
           <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Material</th>
           <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Stock actual</th>
-          <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Mínimo requerido</th>
+          <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Mínimo</th>
+          <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Costo unit.</th>
           <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Proveedor</th>
         </tr>
         ${criticos.map(m => `
@@ -74,6 +71,7 @@ export default async function handler(req, res) {
           <td style="padding:10px 12px;font-size:13px;color:#1a1a1a;font-weight:600;">${m.nombre}</td>
           <td style="padding:10px 12px;font-size:13px;color:#dc2626;font-weight:700;">0 ${m.unidad}</td>
           <td style="padding:10px 12px;font-size:13px;color:#555;">${m.stock_minimo} ${m.unidad}</td>
+          <td style="padding:10px 12px;font-size:13px;color:#C9A84C;font-weight:600;">${fmt(m.costo_unitario)}</td>
           <td style="padding:10px 12px;font-size:13px;color:#555;">${m.proveedor || '—'}</td>
         </tr>`).join('')}
       </table>` : ''}
@@ -84,7 +82,8 @@ export default async function handler(req, res) {
         <tr style="background:#fffbeb;">
           <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Material</th>
           <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Stock actual</th>
-          <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Mínimo requerido</th>
+          <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Mínimo</th>
+          <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Costo unit.</th>
           <th style="padding:10px 12px;font-size:12px;color:#666;text-align:left;">Proveedor</th>
         </tr>
         ${bajos.map(m => `
@@ -92,20 +91,20 @@ export default async function handler(req, res) {
           <td style="padding:10px 12px;font-size:13px;color:#1a1a1a;font-weight:600;">${m.nombre}</td>
           <td style="padding:10px 12px;font-size:13px;color:#d97706;font-weight:700;">${m.stock_actual} ${m.unidad}</td>
           <td style="padding:10px 12px;font-size:13px;color:#555;">${m.stock_minimo} ${m.unidad}</td>
+          <td style="padding:10px 12px;font-size:13px;color:#C9A84C;font-weight:600;">${fmt(m.costo_unitario)}</td>
           <td style="padding:10px 12px;font-size:13px;color:#555;">${m.proveedor || '—'}</td>
         </tr>`).join('')}
       </table>` : ''}
 
       <div style="background:#f9f6f0;border-left:3px solid #C9A84C;padding:16px 20px;border-radius:0 6px 6px 0;">
         <p style="margin:0;color:#555;font-size:13px;line-height:1.7;">
-          Ingresa al sistema para gestionar las compras: 
+          Ingresa al sistema para gestionar las compras:
           <a href="https://mrchester-produccion.vercel.app/compras" style="color:#6d28d9;font-weight:600;">mrchester-produccion.vercel.app/compras</a>
         </p>
       </div>
     </td>
   </tr>
 
-  <!-- Footer -->
   <tr>
     <td style="background:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
       <p style="margin:0;color:#C9A84C;font-size:10px;letter-spacing:2px;">MR. CHESTER EXPORT S.A.S.</p>
@@ -122,7 +121,8 @@ export default async function handler(req, res) {
   try {
     await resend.emails.send({
       from: 'Mr. Chester ERP <onboarding@resend.dev>',
-      to: ['josephtoledo@gmail.com'],      subject: `${criticos.length > 0 ? '🚨 URGENTE' : '⚠️ Alerta'} — Stock bajo en bodega · Mr. Chester`,
+      to: ['josephtoledo@gmail.com'],
+      subject: `${criticos.length > 0 ? '🚨 URGENTE' : '⚠️ Alerta'} — Stock bajo en bodega · Mr. Chester`,
       html,
     })
     res.status(200).json({ ok: true })
