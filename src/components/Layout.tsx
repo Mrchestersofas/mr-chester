@@ -2,22 +2,20 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import {
   LayoutDashboard, ClipboardList, PlusCircle,
-  Wrench, Package, Calculator, Users, Factory
+  Wrench, Package, Calculator, Users, Factory, ShoppingCart
 } from 'lucide-react'
-
 const navItems = [
-  { href: '/',            label: 'Dashboard',       icon: LayoutDashboard },
-  { href: '/pedidos',     label: 'Pedidos',          icon: ClipboardList },
-  { href: '/pedidos/nuevo', label: 'Nuevo pedido',   icon: PlusCircle },
-  { href: '/produccion',  label: 'Producción',       icon: Wrench },
-  { href: '/materiales',  label: 'Materiales',       icon: Package },
-  { href: '/costos',      label: 'Costos',           icon: Calculator },
-  { href: '/clientes',    label: 'Clientes',         icon: Users },
+  { href: '/',              label: 'Dashboard',     icon: LayoutDashboard },
+  { href: '/pedidos',       label: 'Pedidos',       icon: ClipboardList },
+  { href: '/pedidos/nuevo', label: 'Nuevo pedido',  icon: PlusCircle },
+  { href: '/produccion',    label: 'Producción',    icon: Wrench },
+  { href: '/compras',       label: 'Compras',       icon: ShoppingCart },
+  { href: '/materiales',    label: 'Materiales',    icon: Package },
+  { href: '/costos',        label: 'Costos',        icon: Calculator },
+  { href: '/clientes',      label: 'Clientes',      icon: Users },
 ]
-
 export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
@@ -49,7 +47,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <p className="text-xs text-gray-400">v1.0 — Mr. Chester ERP</p>
         </div>
       </aside>
-
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
         {children}
