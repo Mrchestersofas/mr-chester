@@ -129,7 +129,8 @@ function TabInventario() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('materiales').select('*').eq('tipo', 'stock').order('nombre').then(({ data }) => {      setMateriales(data || [])
+    supabase.from('materiales').select('*').order('nombre').then(({ data }) => {
+      setMateriales(data || [])
       setLoading(false)
     })
   }, [])
@@ -144,11 +145,18 @@ function TabInventario() {
     if (isNaN(nuevo) || nuevo < 0) return
     setGuardando(p => ({ ...p, [mat.id]: true }))
     await supabase.from('materiales').update({ stock_actual: nuevo }).eq('id', mat.id)
-    setMateriales(p => p.map(m => m.id === mat.id ? { ...m, stock_actual: nuevo } : m))
+    const matActualizados = materiales.map(m => m.id === mat.id ? { ...m, stock_actual: nuevo } : m)
+    setMateriales(matActualizados)
     setEdits(p => ({ ...p, [mat.id]: '' }))
     setGuardando(p => ({ ...p, [mat.id]: false }))
     setGuardado(p => ({ ...p, [mat.id]: true }))
     setTimeout(() => setGuardado(p => ({ ...p, [mat.id]: false })), 2000)
+    const alertas = matActualizados.filter(m => m.stock_actual < m.stock_minimo)
+    if (alertas.length > 0) {
+      try {
+        await fetch('/api/alerta-stock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alertas }) })
+      } catch (e) { console.error('Error alerta stock:', e) }
+    }
   }
 
   const filtrados = materiales.filter(m =>
