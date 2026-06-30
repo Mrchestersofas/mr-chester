@@ -13,6 +13,7 @@ export default function NuevoPedido() {
     referencia_id: '',
     tela_id: '',
     cantidad: 1,
+    fecha_pedido: new Date().toISOString().split('T')[0],
     fecha_entrega: '',
     prioridad: 'normal',
     precio_venta: '',
@@ -68,6 +69,7 @@ export default function NuevoPedido() {
       material: tela ? tela.nombre : '',
       color: tela ? tela.nombre : '',
       cantidad: Number(form.cantidad),
+      fecha_pedido: form.fecha_pedido,
       fecha_entrega: form.fecha_entrega,
       prioridad: form.prioridad,
       estado: 'pendiente',
@@ -77,7 +79,6 @@ export default function NuevoPedido() {
       medio_pago: form.medio_pago,
     }).select().single()
 
-    // Enviar email de confirmación si el cliente tiene email
     if (pedido && cliente?.email) {
       try {
         await fetch('/api/enviar-confirmacion', {
@@ -90,7 +91,6 @@ export default function NuevoPedido() {
       }
     }
 
-    // Programar automáticamente la producción del pedido
     if (pedido) {
       try {
         await fetch('/api/programar-pedido', {
@@ -117,7 +117,7 @@ export default function NuevoPedido() {
       <h1 className='text-xl font-medium mb-5'>Nuevo pedido</h1>
       <div className='card space-y-6'>
 
-        {/* SECCIÓN: CLIENTE */}
+        {/* CLIENTE */}
         <section>
           <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Cliente</h2>
           <div className='flex gap-4 mb-3'>
@@ -128,7 +128,6 @@ export default function NuevoPedido() {
               <input type='radio' checked={form.crear_cliente} onChange={() => set('crear_cliente', true)} /> Nuevo cliente
             </label>
           </div>
-
           {!form.crear_cliente ? (
             <select value={form.cliente_id} onChange={e => set('cliente_id', e.target.value)}>
               <option value=''>Seleccionar cliente</option>
@@ -168,7 +167,7 @@ export default function NuevoPedido() {
           )}
         </section>
 
-        {/* SECCIÓN: PRODUCTO */}
+        {/* PRODUCTO */}
         <section>
           <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Producto</h2>
           <div className='space-y-3'>
@@ -219,7 +218,6 @@ export default function NuevoPedido() {
               </div>
             </div>
           </div>
-
           {prod && (
             <div className='mt-3 bg-purple-50 rounded-lg p-3 text-sm grid grid-cols-3 gap-2'>
               <div><span className='text-gray-500 text-xs block'>Metros tela</span><b>{prod.metros_tela}m</b></div>
@@ -229,7 +227,7 @@ export default function NuevoPedido() {
           )}
         </section>
 
-        {/* SECCIÓN: PRECIO Y FECHA */}
+        {/* PRECIO Y FECHA */}
         <section>
           <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Precio y fecha</h2>
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
@@ -238,13 +236,17 @@ export default function NuevoPedido() {
               <input placeholder='Ej: 2065000' value={form.precio_venta} onChange={e => set('precio_venta', e.target.value)} />
             </div>
             <div>
+              <label className='text-xs text-gray-500 mb-1 block'>Fecha del pedido *</label>
+              <input type='date' value={form.fecha_pedido} onChange={e => set('fecha_pedido', e.target.value)} />
+            </div>
+            <div>
               <label className='text-xs text-gray-500 mb-1 block'>Fecha de entrega *</label>
               <input type='date' value={form.fecha_entrega} onChange={e => set('fecha_entrega', e.target.value)} />
             </div>
           </div>
         </section>
 
-        {/* SECCIÓN: ABONO Y PAGO */}
+        {/* ABONO */}
         <section>
           <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Abono</h2>
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
@@ -273,7 +275,7 @@ export default function NuevoPedido() {
           )}
         </section>
 
-        {/* SECCIÓN: OBSERVACIONES */}
+        {/* OBSERVACIONES */}
         <section>
           <label className='text-xs text-gray-500 mb-1 block'>Observaciones</label>
           <textarea rows={3} placeholder='Instrucciones especiales, detalles de entrega, etc.' value={form.observaciones} onChange={e => set('observaciones', e.target.value)} />
