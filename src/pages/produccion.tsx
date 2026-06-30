@@ -48,6 +48,16 @@ const PRIORIDAD_COLOR: Record<string, string> = {
   normal: 'border-l-4 border-l-gray-200',
 }
 
+function semaforo(fechaEntrega: string) {
+  if (!fechaEntrega) return null
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const entrega = new Date(fechaEntrega); entrega.setHours(0, 0, 0, 0)
+  const dias = Math.ceil((entrega.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+  if (dias < 0) return { color: '#ef4444', titulo: `Vencido hace ${Math.abs(dias)} día(s)` }
+  if (dias <= 3) return { color: '#f59e0b', titulo: `Vence en ${dias} día(s)` }
+  return { color: '#22c55e', titulo: `${dias} día(s) restantes` }
+}
+
 function fmtFecha(iso: string) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
@@ -64,20 +74,16 @@ function mismodia(iso: string, fecha: Date) {
   return d.toDateString() === fecha.toDateString()
 }
 
-// Avanza un pedido a la siguiente etapa
 async function avanzarEtapa(prog: Programacion, recargar: () => void) {
   const idx = ETAPAS.findIndex(e => e.key === prog.etapa_actual)
   if (idx === -1 || idx === ETAPAS.length - 1) {
-    // Última etapa -> marcar como completado
     await supabase.from('programacion_produccion').update({ etapa_actual: 'completado' }).eq('id', prog.id)
     await supabase.from('pedidos').update({ estado: 'entregado' }).eq('id', prog.pedido_id)
   } else {
     const siguienteEtapa = ETAPAS[idx + 1].key
     await supabase.from('programacion_produccion').update({ etapa_actual: siguienteEtapa }).eq('id', prog.id)
-    // Sincronizar con el estado del pedido también
     const estadoPedido = siguienteEtapa === 'control_calidad' ? 'control_calidad'
       : siguienteEtapa === 'tapizado' ? 'tapizado'
-      : siguienteEtapa === 'estructura' ? 'estructura'
       : 'estructura'
     await supabase.from('pedidos').update({ estado: estadoPedido }).eq('id', prog.pedido_id)
   }
@@ -91,9 +97,7 @@ export default function Produccion() {
   const [fechaRef, setFechaRef] = useState(new Date())
   const [moviendo, setMoviendo] = useState<string | null>(null)
 
-  useEffect(() => {
-    cargar()
-  }, [])
+  useEffect(() => { cargar() }, [])
 
   async function cargar() {
     setLoading(true)
@@ -138,29 +142,46 @@ export default function Produccion() {
                   <span className={`w-2 h-2 rounded-full ${color.dot}`}></span>
                   <span className={`text-xs font-semibold ${color.text}`}>{etapa.label}</span>
                 </div>
-               <div className='flex items-center gap-1.5'>
-  <span className={`text-xs font-bold ${color.text} bg-white/60 rounded-full px-2 py-0.5`}>{items.length}</span>
-  <button
-    onClick={() => window.open(`/imprimir-seccion?etapa=${etapa.key}`, '_blank')}
-    className={`text-xs ${color.text} bg-white/60 hover:bg-white/90 rounded px-1.5 py-0.5 transition-colors`}
-    title='Imprimir programación de hoy'
-  >
-    🖨️
-  </button>
-</div>              </div>
+                <div className='flex items-center gap-1.5'>
+                  <span className={`text-xs font-bold ${color.text} bg-white/60 rounded-full px-2 py-0.5`}>{items.length}</span>
+                  <button
+                    onClick={() => window.open(`/imprimir-seccion?etapa=${etapa.key}`, '_blank')}
+                    className={`text-xs ${color.text} bg-white/60 hover:bg-white/90 rounded px-1.5 py-0.5 transition-colors`}
+                    title='Imprimir programación de hoy'
+                  >
+                    🖨️
+                  </button>
+                </div>
+              </div>
               <div className='bg-gray-50 rounded-b-lg p-2 min-h-[400px] space-y-2'>
                 {items.length === 0 && (
                   <p className='text-xs text-gray-300 text-center py-6'>Sin pedidos</p>
                 )}
                 {items.map(p => {
                   const esUltima = etapa.key === 'despacho'
+                  const s = semaforo(p.pedido?.fecha_entrega)
                   return (
                     <div key={p.id} className={`bg-white rounded-lg p-3 shadow-sm ${PRIORIDAD_COLOR[p.pedido?.prioridad || 'normal']}`}>
                       <div className='flex items-start justify-between mb-1'>
                         <span className='text-sm font-semibold text-purple-700'>{p.pedido?.numero}</span>
-                        {p.pedido?.prioridad === 'urgente' && (
-                          <span className='text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded'>Urgente</span>
-                        )}
+                        <div className='flex items-center gap-1.5'>
+                          {s && (
+                            <span
+                              title={s.titulo}
+                              style={{
+                                width: 9,
+                                height: 9,
+                                borderRadius: '50%',
+                                background: s.color,
+                                display: 'inline-block',
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
+                          {p.pedido?.prioridad === 'urgente' && (
+                            <span className='text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded'>Urgente</span>
+                          )}
+                        </div>
                       </div>
                       <p className='text-xs text-gray-600 mb-0.5 truncate'>{p.pedido?.tipo_sofa}</p>
                       <p className='text-xs text-gray-400 mb-2 truncate'>{p.pedido?.cliente?.nombre || '—'}</p>
@@ -278,12 +299,27 @@ export default function Produccion() {
               const inicioISO = (p as any)[`inicio_${etapaHoy.key}`]
               const finISO = (p as any)[`fin_${etapaHoy.key}`]
               const color = ETAPA_HEADER[etapaHoy.key]
+              const s = semaforo(p.pedido?.fecha_entrega)
               return (
                 <div key={p.id} className='card flex items-center justify-between'>
                   <div className='flex items-center gap-4'>
                     <div className={`w-2 h-12 rounded-full ${color.dot}`}></div>
                     <div>
-                      <p className='font-medium text-purple-700'>{p.pedido?.numero}</p>
+                      <div className='flex items-center gap-2'>
+                        <p className='font-medium text-purple-700'>{p.pedido?.numero}</p>
+                        {s && (
+                          <span
+                            title={s.titulo}
+                            style={{
+                              width: 9,
+                              height: 9,
+                              borderRadius: '50%',
+                              background: s.color,
+                              display: 'inline-block',
+                            }}
+                          />
+                        )}
+                      </div>
                       <p className='text-sm text-gray-500'>{p.pedido?.tipo_sofa} — {p.pedido?.cliente?.nombre}</p>
                     </div>
                   </div>

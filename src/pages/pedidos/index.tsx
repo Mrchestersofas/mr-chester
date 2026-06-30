@@ -16,6 +16,16 @@ const ESTADOS: { value: string; label: string }[] = [
   { value: 'entregado',      label: 'Entregado' },
 ]
 
+function semaforo(fechaEntrega: string, estado: string) {
+  if (estado === 'entregado') return null
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const entrega = new Date(fechaEntrega); entrega.setHours(0, 0, 0, 0)
+  const dias = Math.ceil((entrega.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+  if (dias < 0) return { color: '#ef4444', titulo: `Vencido hace ${Math.abs(dias)} día(s)` }
+  if (dias <= 3) return { color: '#f59e0b', titulo: `Vence en ${dias} día(s)` }
+  return { color: '#22c55e', titulo: `${dias} día(s) restantes` }
+}
+
 export default function Pedidos() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,31 +115,51 @@ export default function Pedidos() {
               </tr>
             </thead>
             <tbody>
-              {filtrados.map(p => (
-                <tr key={p.id}>
-                  <td><span className="font-medium text-purple-700">{p.numero}</span></td>
-                  <td>{(p.cliente as any)?.nombre || '—'}</td>
-                  <td>{p.tipo_sofa}</td>
-                  <td className="text-gray-500">{p.material} / {p.color}</td>
-                  <td className="text-sm">{format(parseISO(p.fecha_entrega), 'dd/MM/yyyy')}</td>
-                  <td><PrioridadBadge prioridad={p.prioridad} /></td>
-                  <td><EstadoBadge estado={p.estado} /></td>
-                  <td className="font-medium">${Number(p.precio_venta).toLocaleString('es-CO')}</td>
-                  <td>
-                    {p.estado !== 'entregado' && (
-                      <select
-                        className="text-xs py-1 w-36"
-                        value={p.estado}
-                        onChange={e => cambiarEstado(p.id, e.target.value as OrderStatus)}
-                      >
-                        {ESTADOS.filter(e => e.value).map(e =>
-                          <option key={e.value} value={e.value}>{e.label}</option>
+              {filtrados.map(p => {
+                const s = semaforo(p.fecha_entrega, p.estado)
+                return (
+                  <tr key={p.id}>
+                    <td><span className="font-medium text-purple-700">{p.numero}</span></td>
+                    <td>{(p.cliente as any)?.nombre || '—'}</td>
+                    <td>{p.tipo_sofa}</td>
+                    <td className="text-gray-500">{p.material} / {p.color}</td>
+                    <td className="text-sm">
+                      <div className="flex items-center gap-1.5">
+                        {s && (
+                          <span
+                            title={s.titulo}
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: '50%',
+                              background: s.color,
+                              display: 'inline-block',
+                              flexShrink: 0,
+                            }}
+                          />
                         )}
-                      </select>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {format(parseISO(p.fecha_entrega), 'dd/MM/yyyy')}
+                      </div>
+                    </td>
+                    <td><PrioridadBadge prioridad={p.prioridad} /></td>
+                    <td><EstadoBadge estado={p.estado} /></td>
+                    <td className="font-medium">${Number(p.precio_venta).toLocaleString('es-CO')}</td>
+                    <td>
+                      {p.estado !== 'entregado' && (
+                        <select
+                          className="text-xs py-1 w-36"
+                          value={p.estado}
+                          onChange={e => cambiarEstado(p.id, e.target.value as OrderStatus)}
+                        >
+                          {ESTADOS.filter(e => e.value).map(e =>
+                            <option key={e.value} value={e.value}>{e.label}</option>
+                          )}
+                        </select>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
