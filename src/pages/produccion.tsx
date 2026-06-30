@@ -158,7 +158,7 @@ export default function Produccion() {
                       <p className='text-xs text-gray-400 mb-2 truncate'>{p.pedido?.cliente?.nombre || '—'}</p>
                       <div className='flex items-center justify-between'>
                         <span className='text-xs text-gray-400 flex items-center gap-1'>
-                          <Clock size={10} /> {fmtHora((p as any)[`fin_${etapa.key}`])}
+                          <Clock size={10} /> {fmtHora((p as any)[`inicio_${etapa.key}`])}
                         </span>
                         <button
                           onClick={() => handleAvanzar(p)}
