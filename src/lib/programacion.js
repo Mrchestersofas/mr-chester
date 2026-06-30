@@ -171,9 +171,14 @@ function sumarHorasLaborales(fechaInicioUTC, horasASumar) {
 }
 
 export function calcularFechaInicio(fechaBase, pedidosEnCola) {
+  // Siempre arrancar al inicio de jornada (8am) del día correspondiente,
+  // sin importar la hora exacta a la que se crea el pedido.
   let fecha = ajustarInicioJornada(new Date(fechaBase))
-
-  const conteoXDia = {}
+  const c0 = aComponentesColombia(fecha)
+  const jornada0 = jornadaDelDia(c0.diaSemana)
+  if (jornada0 && c0.minutosDelDia > jornada0.inicio) {
+    fecha = deComponentesColombia(c0.año, c0.mes, c0.dia, jornada0.inicio)
+  }  const conteoXDia = {}
   for (const p of pedidosEnCola) {
     const c = aComponentesColombia(new Date(p.inicio_estructura))
     const key = `${c.año}-${c.mes}-${c.dia}`
