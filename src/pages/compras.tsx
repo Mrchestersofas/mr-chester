@@ -270,7 +270,7 @@ export default function Compras() {
     const { data: materiales } = await supabase.from('materiales').select('*')
     if (!materiales) { setLoading(false); return }
 
-    // Tab 1: Programación
+    // Tab 1: Programación (todos los materiales, sin filtrar por tipo)
     const { data: pedidos } = await supabase.from('pedidos').select('tipo_sofa, cantidad').in('estado', ESTADOS_ACTIVOS)
     setPedidosCount(pedidos?.length || 0)
     const necesidades: Record<string, number> = {}
@@ -288,9 +288,10 @@ export default function Compras() {
       if (falta > 0) listaProg.push({ material_id: mid, nombre: mat.nombre, unidad: mat.unidad, proveedor: mat.proveedor || 'Sin proveedor', stock_actual: mat.stock_actual, stock_minimo: mat.stock_minimo, cantidad_necesaria: cant, cantidad_a_comprar: falta, costo_unitario: mat.costo_unitario, costo_total: falta * mat.costo_unitario, origen: 'programacion' })
     }
 
-    // Tab 2: Stock mínimo
+    // Tab 2: Stock mínimo — SOLO materiales tipo 'stock'
+    const materialesStock = materiales.filter(m => m.tipo === 'stock')
     const listaStock: ItemCompra[] = []
-    for (const mat of materiales) {
+    for (const mat of materialesStock) {
       if (mat.stock_actual < mat.stock_minimo) {
         const falta = mat.stock_minimo - mat.stock_actual
         listaStock.push({ material_id: mat.id, nombre: mat.nombre, unidad: mat.unidad, proveedor: mat.proveedor || 'Sin proveedor', stock_actual: mat.stock_actual, stock_minimo: mat.stock_minimo, cantidad_necesaria: mat.stock_minimo, cantidad_a_comprar: falta, costo_unitario: mat.costo_unitario, costo_total: falta * mat.costo_unitario, origen: 'stock_minimo' })
@@ -340,7 +341,6 @@ export default function Compras() {
         )}
       </div>
 
-      {/* Tabs */}
       <div className='flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit flex-wrap'>
         <TabBtn active={tab === 'inventario'} onClick={() => setTab('inventario')}>🏪 Inventario</TabBtn>
         <TabBtn active={tab === 'programacion'} onClick={() => setTab('programacion')}>
@@ -354,7 +354,6 @@ export default function Compras() {
         </TabBtn>
       </div>
 
-      {/* Contenido */}
       {tab === 'inventario' && <TabInventario />}
 
       {tab !== 'inventario' && !calculado && !loading && (
