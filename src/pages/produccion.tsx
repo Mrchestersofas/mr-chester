@@ -138,8 +138,16 @@ export default function Produccion() {
                   <span className={`w-2 h-2 rounded-full ${color.dot}`}></span>
                   <span className={`text-xs font-semibold ${color.text}`}>{etapa.label}</span>
                 </div>
-                <span className={`text-xs font-bold ${color.text} bg-white/60 rounded-full px-2 py-0.5`}>{items.length}</span>
-              </div>
+               <div className='flex items-center gap-1.5'>
+  <span className={`text-xs font-bold ${color.text} bg-white/60 rounded-full px-2 py-0.5`}>{items.length}</span>
+  <button
+    onClick={() => window.open(`/imprimir-seccion?etapa=${etapa.key}`, '_blank')}
+    className={`text-xs ${color.text} bg-white/60 hover:bg-white/90 rounded px-1.5 py-0.5 transition-colors`}
+    title='Imprimir programación de hoy'
+  >
+    🖨️
+  </button>
+</div>              </div>
               <div className='bg-gray-50 rounded-b-lg p-2 min-h-[400px] space-y-2'>
                 {items.length === 0 && (
                   <p className='text-xs text-gray-300 text-center py-6'>Sin pedidos</p>
