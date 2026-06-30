@@ -8,8 +8,8 @@ export default async function handler(req, res) {
 
   const { pedido, cliente } = req.body
 
-  if (!cliente?.email) {
-    return res.status(200).json({ ok: false, motivo: 'Cliente sin email' })
+  if (!cliente?.email && !pedido) {
+    return res.status(200).json({ ok: false, motivo: 'Sin datos' })
   }
 
   const fechaFormateada = new Date(pedido.fecha_entrega + 'T00:00:00')
@@ -32,10 +32,8 @@ export default async function handler(req, res) {
 <tr><td align="center">
 <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
-  <!-- HEADER con logo -->
   <tr>
     <td style="background-color:#1a1a1a;padding:40px 40px 30px;text-align:center;border-radius:8px 8px 0 0;">
-      <!-- Corona SVG -->
       <div style="margin-bottom:8px;">
         <svg width="60" height="45" viewBox="0 0 100 75" xmlns="http://www.w3.org/2000/svg">
           <path d="M10,60 L10,30 L30,50 L50,10 L70,50 L90,30 L90,60 Z" fill="none" stroke="#C9A84C" stroke-width="3" stroke-linejoin="round"/>
@@ -52,24 +50,21 @@ export default async function handler(req, res) {
     </td>
   </tr>
 
-  <!-- BANDA DORADA -->
   <tr>
     <td style="background-color:#C9A84C;padding:12px 40px;text-align:center;">
       <p style="margin:0;color:#1a1a1a;font-size:12px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;">CONFIRMACIÓN DE PEDIDO</p>
     </td>
   </tr>
 
-  <!-- CUERPO PRINCIPAL -->
   <tr>
     <td style="background-color:#ffffff;padding:50px 40px 40px;">
 
       <p style="margin:0 0 6px;color:#888;font-size:13px;font-family:Arial,sans-serif;">Estimado/a,</p>
       <h2 style="margin:0 0 20px;color:#1a1a1a;font-size:22px;font-family:Georgia,serif;font-weight:normal;">Su pedido ha sido recibido con éxito.</h2>
       <p style="color:#555;font-size:14px;line-height:1.8;margin:0 0 32px;font-family:Arial,sans-serif;">
-        Gracias por confiar en <strong>Mr. Chester</strong>. A continuación encontrará el resumen de su orden. Recuerde que la producción iniciará una vez confirmemos el pago del anticipo.
+        Gracias por confiar en <strong>Mr. Chester</strong>. A continuación encontrará el resumen de su orden.
       </p>
 
-      <!-- Número de pedido destacado -->
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
         <tr>
           <td style="background-color:#1a1a1a;border-left:4px solid #C9A84C;padding:20px 24px;border-radius:4px;text-align:center;">
@@ -79,15 +74,14 @@ export default async function handler(req, res) {
         </tr>
       </table>
 
-      <!-- Detalles del pedido -->
       <p style="margin:0 0 12px;color:#1a1a1a;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;border-bottom:1px solid #C9A84C;padding-bottom:8px;">DETALLE DE LA ORDEN</p>
 
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;width:45%;">Cliente</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;font-weight:600;">${cliente.nombre}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;font-weight:600;">${cliente?.nombre || '—'}</td>
         </tr>
-        ${cliente.cedula ? `
+        ${cliente?.cedula ? `
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Cédula</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.cedula}</td>
@@ -113,7 +107,7 @@ export default async function handler(req, res) {
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Observaciones</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.observaciones}</td>
         </tr>` : ''}
-        ${cliente.direccion ? `
+        ${cliente?.direccion ? `
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Dirección de entrega</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.direccion}${cliente.ciudad ? ', ' + cliente.ciudad : ''}</td>
@@ -137,7 +131,6 @@ export default async function handler(req, res) {
         </tr>`}
       </table>
 
-      <!-- Info de entrega -->
       <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9f6f0;border-left:3px solid #C9A84C;padding:20px 24px;margin-bottom:32px;border-radius:0 4px 4px 0;">
         <tr>
           <td>
@@ -145,26 +138,24 @@ export default async function handler(req, res) {
             <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• La producción inicia tras confirmar el pago del anticipo.</p>
             <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• El valor del envío <strong>no está incluido</strong> en el precio, salvo indicación expresa.</p>
             <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Pedidos fuera de Bogotá: hasta <strong>7 días hábiles</strong> adicionales por transportadora.</p>
-            <p style="margin:0;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Verifique previamente que el producto pueda ingresar al inmueble (puertas, ascensores, pasillos).</p>
+            <p style="margin:0;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Verifique previamente que el producto pueda ingresar al inmueble.</p>
           </td>
         </tr>
       </table>
 
-      <!-- Términos y condiciones colapsados -->
       <p style="margin:0 0 12px;color:#1a1a1a;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;border-bottom:1px solid #C9A84C;padding-bottom:8px;">TÉRMINOS Y CONDICIONES</p>
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
         <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">1. Todos nuestros productos son fabricados bajo pedido y conforme a las especificaciones aprobadas.</td></tr>
         <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">2. No se aceptan cambios en diseño, medidas, color o tela una vez iniciada la producción.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">3. El saldo total debe estar cancelado antes del despacho. Ningún pedido sale sin pago confirmado.</td></tr>
+        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">3. El saldo total debe estar cancelado antes del despacho.</td></tr>
         <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">4. Pueden existir variaciones de hasta ±3 cm en medidas finales por ser fabricación artesanal.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">5. Garantía de <strong>5 años</strong> sobre estructura y defectos de fabricación. No cubre mal uso, humedad ni mascotas.</td></tr>
+        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">5. Garantía de <strong>5 años</strong> sobre estructura y defectos de fabricación.</td></tr>
         <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">6. Por ser producto personalizado, no aplica retracto ni devoluciones por cambio de preferencia.</td></tr>
       </table>
 
     </td>
   </tr>
 
-  <!-- CONTACTO -->
   <tr>
     <td style="background-color:#1a1a1a;padding:32px 40px;">
       <p style="margin:0 0 20px;color:#C9A84C;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;text-align:center;">CONTÁCTENOS</p>
@@ -190,7 +181,6 @@ export default async function handler(req, res) {
     </td>
   </tr>
 
-  <!-- FOOTER -->
   <tr>
     <td style="background-color:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
       <p style="margin:0 0 4px;color:#C9A84C;font-size:11px;letter-spacing:2px;font-family:Arial,sans-serif;">MR. CHESTER EXPORT S.A.S.</p>
@@ -205,10 +195,16 @@ export default async function handler(req, res) {
 </body>
 </html>`
 
+  // Destinatarios: cliente (si tiene email) + siempre josephtoledo@gmail.com
+  const destinatarios = ['josephtoledo@gmail.com']
+  if (cliente?.email && cliente.email !== 'josephtoledo@gmail.com') {
+    destinatarios.unshift(cliente.email)
+  }
+
   try {
     await resend.emails.send({
       from: 'Mr. Chester Sofás <onboarding@resend.dev>',
-      to: cliente.email,
+      to: destinatarios,
       subject: `Confirmación de pedido ${pedido.numero} — Mr. Chester Sofás`,
       html
     })
