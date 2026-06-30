@@ -77,6 +77,7 @@ export default function NuevoPedido() {
       medio_pago: form.medio_pago,
     }).select().single()
 
+    // Enviar email de confirmación si el cliente tiene email
     if (pedido && cliente?.email) {
       try {
         await fetch('/api/enviar-confirmacion', {
@@ -86,6 +87,19 @@ export default function NuevoPedido() {
         })
       } catch (e) {
         console.error('No se pudo enviar el email:', e)
+      }
+    }
+
+    // Programar automáticamente la producción del pedido
+    if (pedido) {
+      try {
+        await fetch('/api/programar-pedido', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pedido_id: pedido.id, cantidad: Number(form.cantidad) }),
+        })
+      } catch (e) {
+        console.error('No se pudo programar la producción:', e)
       }
     }
 
