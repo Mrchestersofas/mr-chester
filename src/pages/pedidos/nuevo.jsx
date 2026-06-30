@@ -96,7 +96,12 @@ export default function NuevoPedido() {
         await fetch('/api/programar-pedido', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pedido_id: pedido.id, cantidad: Number(form.cantidad) }),
+          body: JSON.stringify({
+            pedido_id: pedido.id,
+            cantidad: Number(form.cantidad),
+            fecha_entrega: form.fecha_entrega,
+            numero_pedido: pedido.numero,
+          }),
         })
       } catch (e) {
         console.error('No se pudo programar la producción:', e)
