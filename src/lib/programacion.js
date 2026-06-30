@@ -5,6 +5,7 @@
 const OFFSET_COLOMBIA = -5 // UTC-5, todo el año
 
 export const ETAPAS = [
+  { key: 'cola', label: 'En cola', horas: 0 },
   { key: 'estructura', label: 'Estructura', horas: 1.5 },
   { key: 'espumado', label: 'Espumado', horas: 2 },
   { key: 'corte_tela', label: 'Corte de tela', horas: 1.5 },
@@ -16,18 +17,16 @@ export const ETAPAS = [
 
 const UNIDADES_POR_DIA = 3
 
-// Horario laboral en minutos desde medianoche (hora Colombia)
-const JORNADA_LUNES_VIERNES = { inicio: 8 * 60, fin: 17 * 60 + 30 } // 8:00 - 17:30
-const JORNADA_SABADO = { inicio: 8 * 60, fin: 13 * 60 } // 8:00 - 13:00
+const JORNADA_LUNES_VIERNES = { inicio: 8 * 60, fin: 17 * 60 + 30 }
+const JORNADA_SABADO = { inicio: 8 * 60, fin: 13 * 60 }
 
-// Descansos en minutos desde medianoche, aplican lunes a sábado
 const DESCANSOS_LUNES_VIERNES = [
-  { inicio: 10 * 60, fin: 10 * 60 + 20 },      // desayuno 10:00-10:20
-  { inicio: 13 * 60, fin: 14 * 60 },           // almuerzo 1:00-2:00pm
-  { inicio: 16 * 60, fin: 16 * 60 + 20 },      // recreo 4:00-4:20pm
+  { inicio: 10 * 60, fin: 10 * 60 + 20 },
+  { inicio: 13 * 60, fin: 14 * 60 },
+  { inicio: 16 * 60, fin: 16 * 60 + 20 },
 ]
 const DESCANSOS_SABADO = [
-  { inicio: 10 * 60, fin: 10 * 60 + 20 },      // desayuno 10:00-10:20
+  { inicio: 10 * 60, fin: 10 * 60 + 20 },
 ]
 
 function aComponentesColombia(fechaUTC) {
@@ -52,7 +51,7 @@ function deComponentesColombia(año, mes, dia, minutosDelDia) {
 }
 
 function esDiaHabil(diaSemana) {
-  return diaSemana !== 0 // todo excepto domingo
+  return diaSemana !== 0
 }
 
 function jornadaDelDia(diaSemana) {
@@ -66,7 +65,6 @@ function descansosDelDia(diaSemana) {
   return DESCANSOS_LUNES_VIERNES
 }
 
-// Dado un punto en minutos del día, si cae dentro de un descanso, lo mueve al final del descanso
 function saltarDescanso(minutosDelDia, diaSemana) {
   const descansos = descansosDelDia(diaSemana)
   for (const d of descansos) {
@@ -77,7 +75,6 @@ function saltarDescanso(minutosDelDia, diaSemana) {
   return minutosDelDia
 }
 
-// Calcula minutos productivos disponibles entre `desde` y el fin de jornada, descontando descansos
 function minutosProductivosDisponibles(desdeMin, diaSemana) {
   const jornada = jornadaDelDia(diaSemana)
   if (!jornada) return 0
@@ -104,18 +101,14 @@ function siguienteDiaHabil(fechaUTC) {
   return deComponentesColombia(cr.año, cr.mes, cr.dia, jornada.inicio)
 }
 
-// Ajusta una fecha al inicio de jornada hábil más cercano (saltando descansos y fuera de horario)
 function ajustarInicioJornada(fechaUTC) {
   let c = aComponentesColombia(fechaUTC)
-
   while (!esDiaHabil(c.diaSemana)) {
     const ajustada = deComponentesColombia(c.año, c.mes, c.dia + 1, JORNADA_LUNES_VIERNES.inicio)
     c = aComponentesColombia(ajustada)
   }
-
   const jornada = jornadaDelDia(c.diaSemana)
   let minutos = c.minutosDelDia
-
   if (minutos < jornada.inicio) {
     minutos = jornada.inicio
   } else if (minutos >= jornada.fin) {
@@ -123,26 +116,20 @@ function ajustarInicioJornada(fechaUTC) {
   } else {
     minutos = saltarDescanso(minutos, c.diaSemana)
   }
-
   return deComponentesColombia(c.año, c.mes, c.dia, minutos)
 }
 
-// Avanza una fecha sumando horas productivas, respetando jornada y descansos
 function sumarHorasLaborales(fechaInicioUTC, horasASumar) {
   let fecha = ajustarInicioJornada(fechaInicioUTC)
   let minutosRestantes = horasASumar * 60
-
   while (minutosRestantes > 0) {
     const c = aComponentesColombia(fecha)
     const disponibles = minutosProductivosDisponibles(c.minutosDelDia, c.diaSemana)
-
     if (disponibles <= 0) {
       fecha = siguienteDiaHabil(fecha)
       continue
     }
-
     if (minutosRestantes <= disponibles) {
-      // Avanzar minuto a minuto saltando descansos
       let minutosDelDia = c.minutosDelDia
       let porAvanzar = minutosRestantes
       while (porAvanzar > 0) {
@@ -166,19 +153,18 @@ function sumarHorasLaborales(fechaInicioUTC, horasASumar) {
       fecha = siguienteDiaHabil(fecha)
     }
   }
-
   return fecha
 }
 
 export function calcularFechaInicio(fechaBase, pedidosEnCola) {
-  // Siempre arrancar al inicio de jornada (8am) del día correspondiente,
-  // sin importar la hora exacta a la que se crea el pedido.
   let fecha = ajustarInicioJornada(new Date(fechaBase))
   const c0 = aComponentesColombia(fecha)
   const jornada0 = jornadaDelDia(c0.diaSemana)
   if (jornada0 && c0.minutosDelDia > jornada0.inicio) {
     fecha = deComponentesColombia(c0.año, c0.mes, c0.dia, jornada0.inicio)
-  }  const conteoXDia = {}
+  }
+
+  const conteoXDia = {}
   for (const p of pedidosEnCola) {
     const c = aComponentesColombia(new Date(p.inicio_estructura))
     const key = `${c.año}-${c.mes}-${c.dia}`
@@ -205,15 +191,14 @@ export function calcularFechaInicio(fechaBase, pedidosEnCola) {
 export function calcularProgramacionCompleta(fechaInicio) {
   const resultado = {}
   let fechaActual = ajustarInicioJornada(new Date(fechaInicio))
-
   for (const etapa of ETAPAS) {
+    if (etapa.key === 'cola') continue // cola no tiene duración
     const inicio = new Date(fechaActual)
     const fin = sumarHorasLaborales(inicio, etapa.horas)
     resultado[`inicio_${etapa.key}`] = inicio.toISOString()
     resultado[`fin_${etapa.key}`] = fin.toISOString()
     fechaActual = fin
   }
-
   return resultado
 }
 

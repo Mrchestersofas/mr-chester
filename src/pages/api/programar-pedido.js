@@ -1,6 +1,4 @@
 // Archivo: src/pages/api/programar-pedido.js
-// Se llama al crear un pedido nuevo para calcular su programación de producción
-
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { calcularFechaInicio, calcularProgramacionCompleta, verificarFechaEntrega } from '@/lib/programacion'
@@ -12,7 +10,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
   const { pedido_id, cantidad, fecha_entrega, numero_pedido } = req.body
-
   if (!pedido_id) return res.status(400).json({ ok: false, error: 'Falta pedido_id' })
 
   try {
@@ -36,7 +33,7 @@ export default async function handler(req, res) {
     const { error } = await supabase.from('programacion_produccion').insert({
       pedido_id,
       ...ultimaProgramacion,
-      etapa_actual: 'estructura',
+      etapa_actual: 'cola', // ← pedidos nuevos arrancan en cola
     })
 
     if (error) throw error
@@ -47,8 +44,6 @@ export default async function handler(req, res) {
       const check = verificarFechaEntrega(ultimaProgramacion.fin_despacho, fecha_entrega)
       if (!check.seCumple) {
         alertaFecha = check
-
-        // Enviar email de alerta
         try {
           await resend.emails.send({
             from: 'Mr. Chester ERP <onboarding@resend.dev>',
