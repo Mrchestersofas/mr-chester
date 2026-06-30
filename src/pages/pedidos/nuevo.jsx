@@ -10,6 +10,7 @@ export default function NuevoPedido() {
   const [guardando, setGuardando] = useState(false)
   const [form, setForm] = useState({
     cliente_id: '',
+    categoria: '',
     referencia_id: '',
     tela_id: '',
     cantidad: 1,
@@ -32,6 +33,9 @@ export default function NuevoPedido() {
   const prod = productos.find(p => p.id === form.referencia_id)
   const tela = telas.find(t => t.id === form.tela_id)
   const cats = [...new Set(productos.map(p => p.categoria))]
+  const productosFiltrados = form.categoria
+    ? productos.filter(p => p.categoria === form.categoria)
+    : productos
 
   useEffect(() => {
     supabase.from('clientes').select('*').order('nombre').then(({ data }) => setClientes(data || []))
@@ -175,8 +179,8 @@ export default function NuevoPedido() {
               <div>
                 <label className='text-xs text-gray-500 mb-1 block'>Categoría</label>
                 <select
-                  value={cats.find(c => productos.filter(p => p.categoria === c).some(p => p.id === form.referencia_id)) || ''}
-                  onChange={e => set('referencia_id', '')}
+                  value={form.categoria}
+                  onChange={e => { set('categoria', e.target.value); set('referencia_id', '') }}
                 >
                   <option value=''>Todas las categorías</option>
                   {cats.map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -186,13 +190,19 @@ export default function NuevoPedido() {
                 <label className='text-xs text-gray-500 mb-1 block'>Referencia *</label>
                 <select value={form.referencia_id} onChange={e => set('referencia_id', e.target.value)}>
                   <option value=''>Seleccionar referencia</option>
-                  {cats.map(cat => (
-                    <optgroup key={cat} label={cat}>
-                      {productos.filter(p => p.categoria === cat).map(p => (
-                        <option key={p.id} value={p.id}>{p.referencia}</option>
-                      ))}
-                    </optgroup>
-                  ))}
+                  {form.categoria ? (
+                    productosFiltrados.map(p => (
+                      <option key={p.id} value={p.id}>{p.referencia}</option>
+                    ))
+                  ) : (
+                    cats.map(cat => (
+                      <optgroup key={cat} label={cat}>
+                        {productos.filter(p => p.categoria === cat).map(p => (
+                          <option key={p.id} value={p.id}>{p.referencia}</option>
+                        ))}
+                      </optgroup>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
