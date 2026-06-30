@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { ETAPAS } from '@/lib/programacion'
-import { Calendar, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, Clock, ChevronLeft, ChevronRight, ArrowRight, Package } from 'lucide-react'
 
 interface Programacion {
   id: string
@@ -32,15 +32,20 @@ function TabBtn({ active, onClick, children }: { active: boolean, onClick: () =>
   )
 }
 
-const ETAPA_COLOR: Record<string, string> = {
-  estructura: 'bg-amber-100 text-amber-700 border-amber-300',
-  espumado: 'bg-blue-100 text-blue-700 border-blue-300',
-  corte_tela: 'bg-purple-100 text-purple-700 border-purple-300',
-  tapizado: 'bg-pink-100 text-pink-700 border-pink-300',
-  terminado: 'bg-indigo-100 text-indigo-700 border-indigo-300',
-  control_calidad: 'bg-orange-100 text-orange-700 border-orange-300',
-  despacho: 'bg-green-100 text-green-700 border-green-300',
-  completado: 'bg-gray-100 text-gray-500 border-gray-300',
+const ETAPA_HEADER: Record<string, { bg: string; text: string; dot: string }> = {
+  estructura:        { bg: 'bg-amber-50',   text: 'text-amber-700',   dot: 'bg-amber-500' },
+  espumado:          { bg: 'bg-blue-50',    text: 'text-blue-700',    dot: 'bg-blue-500' },
+  corte_tela:        { bg: 'bg-purple-50',  text: 'text-purple-700',  dot: 'bg-purple-500' },
+  tapizado:          { bg: 'bg-pink-50',    text: 'text-pink-700',    dot: 'bg-pink-500' },
+  terminado:         { bg: 'bg-indigo-50',  text: 'text-indigo-700',  dot: 'bg-indigo-500' },
+  control_calidad:   { bg: 'bg-orange-50',  text: 'text-orange-700',  dot: 'bg-orange-500' },
+  despacho:          { bg: 'bg-green-50',   text: 'text-green-700',   dot: 'bg-green-500' },
+}
+
+const PRIORIDAD_COLOR: Record<string, string> = {
+  urgente: 'border-l-4 border-l-red-500',
+  alta: 'border-l-4 border-l-amber-500',
+  normal: 'border-l-4 border-l-gray-200',
 }
 
 function fmtFecha(iso: string) {
@@ -59,11 +64,32 @@ function mismodia(iso: string, fecha: Date) {
   return d.toDateString() === fecha.toDateString()
 }
 
+// Avanza un pedido a la siguiente etapa
+async function avanzarEtapa(prog: Programacion, recargar: () => void) {
+  const idx = ETAPAS.findIndex(e => e.key === prog.etapa_actual)
+  if (idx === -1 || idx === ETAPAS.length - 1) {
+    // Última etapa -> marcar como completado
+    await supabase.from('programacion_produccion').update({ etapa_actual: 'completado' }).eq('id', prog.id)
+    await supabase.from('pedidos').update({ estado: 'entregado' }).eq('id', prog.pedido_id)
+  } else {
+    const siguienteEtapa = ETAPAS[idx + 1].key
+    await supabase.from('programacion_produccion').update({ etapa_actual: siguienteEtapa }).eq('id', prog.id)
+    // Sincronizar con el estado del pedido también
+    const estadoPedido = siguienteEtapa === 'control_calidad' ? 'control_calidad'
+      : siguienteEtapa === 'tapizado' ? 'tapizado'
+      : siguienteEtapa === 'estructura' ? 'estructura'
+      : 'estructura'
+    await supabase.from('pedidos').update({ estado: estadoPedido }).eq('id', prog.pedido_id)
+  }
+  recargar()
+}
+
 export default function Produccion() {
-  const [vista, setVista] = useState<'general' | 'semana' | 'dia'>('general')
+  const [vista, setVista] = useState<'kanban' | 'semana' | 'dia'>('kanban')
   const [programaciones, setProgramaciones] = useState<Programacion[]>([])
   const [loading, setLoading] = useState(true)
   const [fechaRef, setFechaRef] = useState(new Date())
+  const [moviendo, setMoviendo] = useState<string | null>(null)
 
   useEffect(() => {
     cargar()
@@ -73,10 +99,17 @@ export default function Produccion() {
     setLoading(true)
     const { data } = await supabase
       .from('programacion_produccion')
-      .select('*, pedido:pedidos(numero, tipo_sofa, cliente:clientes(nombre))')
+      .select('*, pedido:pedidos(numero, tipo_sofa, prioridad, fecha_entrega, cliente:clientes(nombre))')
+      .neq('etapa_actual', 'completado')
       .order('inicio_estructura', { ascending: true })
     setProgramaciones(data || [])
     setLoading(false)
+  }
+
+  async function handleAvanzar(prog: Programacion) {
+    setMoviendo(prog.id)
+    await avanzarEtapa(prog, cargar)
+    setMoviendo(null)
   }
 
   function cambiarSemana(dir: number) {
@@ -91,51 +124,66 @@ export default function Produccion() {
     setFechaRef(nueva)
   }
 
-  // Vista general: lista cronológica de todos los pedidos en producción
-  function VistaGeneral() {
-    const activos = programaciones.filter(p => p.etapa_actual !== 'completado')
+  // ── TABLERO KANBAN ─────────────────────────────────────────
+  function VistaKanban() {
     return (
-      <div className='card p-0 overflow-hidden'>
-        <table>
-          <thead>
-            <tr>
-              <th>Pedido</th>
-              <th>Cliente</th>
-              <th>Producto</th>
-              <th>Etapa actual</th>
-              <th>Inicio</th>
-              <th>Despacho est.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activos.map(p => (
-              <tr key={p.id}>
-                <td><span className='font-medium text-purple-700'>{p.pedido?.numero}</span></td>
-                <td>{p.pedido?.cliente?.nombre || '—'}</td>
-                <td className='text-gray-500'>{p.pedido?.tipo_sofa}</td>
-                <td>
-                  <span className={`text-xs px-2 py-1 rounded-full border ${ETAPA_COLOR[p.etapa_actual]}`}>
-                    {ETAPAS.find(e => e.key === p.etapa_actual)?.label || p.etapa_actual}
-                  </span>
-                </td>
-                <td className='text-sm text-gray-500'>{fmtFecha(p.inicio_estructura)}</td>
-                <td className='text-sm font-medium'>{fmtFecha(p.fin_despacho)}</td>
-              </tr>
-            ))}
-            {activos.length === 0 && (
-              <tr><td colSpan={6} className='text-center py-8 text-gray-400 text-sm'>No hay pedidos en producción.</td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className='flex gap-3 overflow-x-auto pb-4' style={{ scrollbarWidth: 'thin' }}>
+        {ETAPAS.map(etapa => {
+          const items = programaciones.filter(p => p.etapa_actual === etapa.key)
+          const color = ETAPA_HEADER[etapa.key]
+          return (
+            <div key={etapa.key} className='flex-shrink-0 w-64'>
+              <div className={`${color.bg} rounded-t-lg px-3 py-2.5 flex items-center justify-between`}>
+                <div className='flex items-center gap-2'>
+                  <span className={`w-2 h-2 rounded-full ${color.dot}`}></span>
+                  <span className={`text-xs font-semibold ${color.text}`}>{etapa.label}</span>
+                </div>
+                <span className={`text-xs font-bold ${color.text} bg-white/60 rounded-full px-2 py-0.5`}>{items.length}</span>
+              </div>
+              <div className='bg-gray-50 rounded-b-lg p-2 min-h-[400px] space-y-2'>
+                {items.length === 0 && (
+                  <p className='text-xs text-gray-300 text-center py-6'>Sin pedidos</p>
+                )}
+                {items.map(p => {
+                  const esUltima = etapa.key === 'despacho'
+                  return (
+                    <div key={p.id} className={`bg-white rounded-lg p-3 shadow-sm ${PRIORIDAD_COLOR[p.pedido?.prioridad || 'normal']}`}>
+                      <div className='flex items-start justify-between mb-1'>
+                        <span className='text-sm font-semibold text-purple-700'>{p.pedido?.numero}</span>
+                        {p.pedido?.prioridad === 'urgente' && (
+                          <span className='text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded'>Urgente</span>
+                        )}
+                      </div>
+                      <p className='text-xs text-gray-600 mb-0.5 truncate'>{p.pedido?.tipo_sofa}</p>
+                      <p className='text-xs text-gray-400 mb-2 truncate'>{p.pedido?.cliente?.nombre || '—'}</p>
+                      <div className='flex items-center justify-between'>
+                        <span className='text-xs text-gray-400 flex items-center gap-1'>
+                          <Clock size={10} /> {fmtHora((p as any)[`fin_${etapa.key}`])}
+                        </span>
+                        <button
+                          onClick={() => handleAvanzar(p)}
+                          disabled={moviendo === p.id}
+                          className='text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-md px-2 py-1 flex items-center gap-1 transition-colors disabled:opacity-50'
+                        >
+                          {moviendo === p.id ? '...' : esUltima ? <>Listo ✓</> : <>Avanzar <ArrowRight size={11} /></>}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </div>
     )
   }
 
-  // Vista semanal: cuadrícula de 7 días mostrando qué pedidos tienen actividad cada día
+  // ── VISTA SEMANAL ──────────────────────────────────────────
   function VistaSemana() {
     const inicioSemana = new Date(fechaRef)
     const dia = inicioSemana.getDay()
-    const diff = dia === 0 ? -6 : 1 - dia // lunes como inicio
+    const diff = dia === 0 ? -6 : 1 - dia
     inicioSemana.setDate(inicioSemana.getDate() + diff)
 
     const dias = Array.from({ length: 7 }, (_, i) => {
@@ -172,8 +220,9 @@ export default function Produccion() {
                   <div className='space-y-1'>
                     {itemsDelDia.slice(0, 4).map(p => {
                       const etapaHoy = ETAPAS.find(e => mismodia((p as any)[`inicio_${e.key}`], d))
+                      const color = ETAPA_HEADER[etapaHoy?.key || '']
                       return (
-                        <div key={p.id} className={`text-xs px-1.5 py-1 rounded border ${ETAPA_COLOR[etapaHoy?.key || '']}`}>
+                        <div key={p.id} className={`text-xs px-1.5 py-1 rounded ${color?.bg} ${color?.text}`}>
                           <p className='font-medium truncate'>{p.pedido?.numero}</p>
                           <p className='truncate opacity-75'>{etapaHoy?.label}</p>
                         </div>
@@ -192,7 +241,7 @@ export default function Produccion() {
     )
   }
 
-  // Vista diaria: detalle hora por hora de un día específico
+  // ── VISTA DIARIA ───────────────────────────────────────────
   function VistaDia() {
     const itemsDelDia = programaciones.filter(p =>
       ETAPAS.some(e => mismodia((p as any)[`inicio_${e.key}`], fechaRef))
@@ -220,17 +269,18 @@ export default function Produccion() {
               if (!etapaHoy) return null
               const inicioISO = (p as any)[`inicio_${etapaHoy.key}`]
               const finISO = (p as any)[`fin_${etapaHoy.key}`]
+              const color = ETAPA_HEADER[etapaHoy.key]
               return (
                 <div key={p.id} className='card flex items-center justify-between'>
                   <div className='flex items-center gap-4'>
-                    <div className={`w-2 h-12 rounded-full ${ETAPA_COLOR[etapaHoy.key].split(' ')[0]}`}></div>
+                    <div className={`w-2 h-12 rounded-full ${color.dot}`}></div>
                     <div>
                       <p className='font-medium text-purple-700'>{p.pedido?.numero}</p>
                       <p className='text-sm text-gray-500'>{p.pedido?.tipo_sofa} — {p.pedido?.cliente?.nombre}</p>
                     </div>
                   </div>
                   <div className='text-right'>
-                    <span className={`text-xs px-2 py-1 rounded-full border ${ETAPA_COLOR[etapaHoy.key]}`}>
+                    <span className={`text-xs px-2 py-1 rounded-full ${color.bg} ${color.text}`}>
                       {etapaHoy.label}
                     </span>
                     <p className='text-xs text-gray-400 mt-1 flex items-center gap-1 justify-end'>
@@ -247,16 +297,20 @@ export default function Produccion() {
   }
 
   return (
-    <div className='p-6 max-w-5xl mx-auto'>
+    <div className='p-6 max-w-7xl mx-auto'>
       <div className='flex items-center justify-between mb-6'>
         <div>
           <h1 className='text-xl font-medium'>Producción</h1>
-          <p className='text-sm text-gray-400 mt-1'>Programación de fabricación — capacidad 3 unidades/día</p>
+          <p className='text-sm text-gray-400 mt-1'>Tablero de fabricación — capacidad 3 unidades/día</p>
+        </div>
+        <div className='flex items-center gap-2 text-sm text-gray-500'>
+          <Package size={15} />
+          {programaciones.length} pedido(s) en proceso
         </div>
       </div>
 
       <div className='flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit'>
-        <TabBtn active={vista === 'general'} onClick={() => setVista('general')}>📋 General</TabBtn>
+        <TabBtn active={vista === 'kanban'} onClick={() => setVista('kanban')}>🗂️ Tablero</TabBtn>
         <TabBtn active={vista === 'semana'} onClick={() => setVista('semana')}>📅 Semana</TabBtn>
         <TabBtn active={vista === 'dia'} onClick={() => setVista('dia')}>🗓️ Día</TabBtn>
       </div>
@@ -265,7 +319,7 @@ export default function Produccion() {
         <div className='card text-center py-16 text-gray-400'>Cargando programación...</div>
       ) : (
         <>
-          {vista === 'general' && <VistaGeneral />}
+          {vista === 'kanban' && <VistaKanban />}
           {vista === 'semana' && <VistaSemana />}
           {vista === 'dia' && <VistaDia />}
         </>
