@@ -59,28 +59,18 @@ export default function Pedidos() {
     cargar()
   }
 
-  async function eliminarPedido(pedido: Pedido) {
-    setEliminando(pedido.id)
+  async function eliminarPedido(p: Pedido) {
+    setEliminando(p.id)
     try {
-      // Borrar programación asociada primero (si existe)
-      await supabase.from('programacion_produccion').delete().eq('pedido_id', pedido.id)
+      await supabase.from('programacion_produccion').delete().eq('pedido_id', p.id)
     } catch (e) {
       // ignorar si no hay programación
     }
     try {
-      await supabase.from('pedidos').delete().eq('id', pedido.id)
+      await supabase.from('pedidos').delete().eq('id', p.id)
     } catch (e) {
       console.error('Error eliminando pedido:', e)
     }
-    setEliminando(null)
-    setConfirmar(null)
-    cargar()
-  }
-    setEliminando(pedido.id)
-    // Borrar programación asociada primero
-    await supabase.from('programacion_produccion').delete().eq('pedido_id', pedido.id)
-    // Borrar el pedido
-    await supabase.from('pedidos').delete().eq('id', pedido.id)
     setEliminando(null)
     setConfirmar(null)
     cargar()
@@ -89,7 +79,6 @@ export default function Pedidos() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
 
-      {/* Modal de confirmación */}
       {confirmar && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -113,10 +102,7 @@ export default function Pedidos() {
               Esto también borrará su programación de producción. Esta acción no se puede deshacer.
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmar(null)}
-                className="btn flex-1"
-              >
+              <button onClick={() => setConfirmar(null)} className="btn flex-1">
                 Cancelar
               </button>
               <button
@@ -176,6 +162,7 @@ export default function Pedidos() {
                 <th>Cliente</th>
                 <th>Producto</th>
                 <th>Material / Color</th>
+                <th>Fecha pedido</th>
                 <th>Entrega</th>
                 <th>Prioridad</th>
                 <th>Estado</th>
@@ -193,6 +180,9 @@ export default function Pedidos() {
                     <td>{(p.cliente as any)?.nombre || '—'}</td>
                     <td>{p.tipo_sofa}</td>
                     <td className="text-gray-500">{p.material} / {p.color}</td>
+                    <td className="text-sm text-gray-500">
+                      {(p as any).fecha_pedido ? format(parseISO((p as any).fecha_pedido), 'dd/MM/yyyy') : '—'}
+                    </td>
                     <td className="text-sm">
                       <div className="flex items-center gap-1.5">
                         {s && (
