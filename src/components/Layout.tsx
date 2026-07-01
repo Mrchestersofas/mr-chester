@@ -3,7 +3,7 @@ import { useRouter } from 'next/router'
 import { useState } from 'react'
 import {
   LayoutDashboard, ClipboardList, PlusCircle,
-  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X
+  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp
 } from 'lucide-react'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: '/pedidos',       label: 'Pedidos',       icon: ClipboardList },
   { href: '/pedidos/nuevo', label: 'Nuevo pedido',  icon: PlusCircle },
   { href: '/produccion',    label: 'Producción',    icon: Wrench },
+  { href: '/ventas',        label: 'Ventas',        icon: TrendingUp },
   { href: '/compras',       label: 'Compras',       icon: ShoppingCart },
   { href: '/materiales',    label: 'Materiales',    icon: Package },
   { href: '/costos',        label: 'Costos',        icon: Calculator },
@@ -75,7 +76,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1 overflow-y-auto flex flex-col min-w-0">
 
-        {/* Barra superior móvil */}
         <div
           className="md:hidden flex items-center justify-between px-4 sticky top-0 z-10"
           style={{ background: '#1a1a1a', height: '56px' }}
@@ -87,18 +87,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             <Menu size={24} />
           </button>
-
           <div className="flex flex-col items-center justify-center">
             <span style={{ color: '#C9A84C', fontSize: '20px', lineHeight: '1.1' }}>♛</span>
-            <span style={{
-              color: '#C9A84C',
-              fontSize: '12px',
-              fontWeight: '800',
-              letterSpacing: '3px',
-              lineHeight: '1.2'
-            }}>MR. CHESTER</span>
+            <span style={{ color: '#C9A84C', fontSize: '12px', fontWeight: '800', letterSpacing: '3px', lineHeight: '1.2' }}>MR. CHESTER</span>
           </div>
-
           <Link
             href="/pedidos/nuevo"
             className="text-xs font-bold px-3 py-1.5 rounded-lg"
