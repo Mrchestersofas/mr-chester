@@ -47,6 +47,29 @@ export default function NuevoPedido() {
 
   const [errores, setErrores] = useState([])
   const [resultado, setResultado] = useState(null)
+  const [compartiendo, setCompartiendo] = useState(false)
+  const [comprobanteUrl, setComprobanteUrl] = useState(null)
+
+  async function compartirComprobante(pedido, cliente, texto) {
+    setCompartiendo(true)
+    try {
+      const blob = await dibujarComprobante(pedido, cliente)
+      const archivo = new File([blob], `Comprobante-${pedido.numero}.png`, { type: 'image/png' })
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        try {
+          await navigator.share({ files: [archivo], text: texto })
+        } catch (e) {
+          if (e && e.name !== 'AbortError') setComprobanteUrl(URL.createObjectURL(blob))
+        }
+      } else {
+        // Computador o navegador sin "compartir": mostrar la imagen para descargarla
+        setComprobanteUrl(URL.createObjectURL(blob))
+      }
+    } catch (e) {
+      alert('No se pudo crear el comprobante: ' + e.message)
+    }
+    setCompartiendo(false)
+  }
 
   function validar() {
     const e = []
@@ -176,11 +199,8 @@ export default function NuevoPedido() {
     const saldo = Number(pedido.precio_venta) - Number(pedido.abono || 0)
     const tel = (cliente?.telefono || '').replace(/\D/g, '')
     const telWa = tel.length === 10 ? '57' + tel : tel
-    const msg = `Hola ${cliente?.nombre || ''}, tu pedido ${pedido.numero} en Mr. Chester quedó registrado.\n` +
-      `Sofá: ${pedido.tipo_sofa} · Tela: ${pedido.material} · Cantidad: ${pedido.cantidad}\n` +
-      `Entrega: ${pedido.fecha_entrega}\nTotal: $${Number(pedido.precio_venta).toLocaleString('es-CO')}` +
-      (Number(pedido.abono) ? ` · Abono: $${Number(pedido.abono).toLocaleString('es-CO')} · Saldo: $${saldo.toLocaleString('es-CO')}` : '') +
-      `\n¡Gracias por elegirnos!`
+    const telVer = tel.length === 10 ? `${tel.slice(0, 3)} ${tel.slice(3, 6)} ${tel.slice(6)}` : tel
+    const msg = textoWhatsApp(pedido, cliente)
     return (
       <div className='p-4 max-w-2xl mx-auto'>
         <div className='card space-y-4'>
@@ -197,9 +217,19 @@ export default function NuevoPedido() {
             {correo?.copia_ok && <div className='text-gray-500 mt-1'>Copia enviada a josephtoledo@gmail.com</div>}
           </div>
           <div className='flex flex-col gap-2'>
-            {tel && <a className='btn btn-primary text-center' href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target='_blank' rel='noreferrer'>Enviar confirmación por WhatsApp</a>}
+            <button className='btn btn-primary' onClick={() => compartirComprobante(pedido, cliente, msg)} disabled={compartiendo}>
+              {compartiendo ? 'Preparando comprobante…' : '📄 Compartir comprobante con logo'}
+            </button>
+            {tel && <a className='btn text-center' href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target='_blank' rel='noreferrer'>Enviar solo texto por WhatsApp</a>}
+            {tel && <p className='text-xs text-gray-500 text-center -mt-1'>WhatsApp del cliente: {telVer}. Si no es el número correcto, corrígelo en Clientes.</p>}
+            {comprobanteUrl && (
+              <div className='rounded-lg border p-2 text-center text-sm text-gray-600'>
+                Mantén presionada la imagen para guardarla o compartirla.
+                <img src={comprobanteUrl} alt={`Comprobante ${pedido.numero}`} className='mt-2 rounded' />
+              </div>
+            )}
             {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>Reintentar correo</button>}
-            <button className='btn' onClick={() => { setResultado(null); setForm(f => ({ ...f, cliente_id: '', referencia_id: '', tela_id: '', precio_venta: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', cantidad: 1, fecha_entrega: '' })) }}>Registrar otro pedido</button>
+            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setForm(f => ({ ...f, cliente_id: '', referencia_id: '', tela_id: '', precio_venta: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', cantidad: 1, fecha_entrega: '' })) }}>Registrar otro pedido</button>
             <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
           </div>
         </div>
@@ -398,4 +428,147 @@ export default function NuevoPedido() {
       </div>
     </div>
   )
+}
+/* ---------- Confirmación para el cliente: texto y comprobante ---------- */
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const pesos = n => '$' + Number(n || 0).toLocaleString('es-CO')
+function fechaLarga(iso) {
+  if (!iso) return ''
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
+  return `${d} de ${MESES[m - 1]} de ${y}`
+}
+function primerNombre(nombre) {
+  const n = String(nombre || '').trim().split(/\s+/)[0] || ''
+  return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase()
+}
+
+function textoWhatsApp(pedido, cliente) {
+  const abono = Number(pedido.abono || 0)
+  const saldo = Number(pedido.precio_venta) - abono
+  const lineas = [
+    `👑 *MR. CHESTER* · Sofás que hablan de ti`,
+    `━━━━━━━━━━━━━━`,
+    `Hola ${primerNombre(cliente?.nombre)}, ✅ *tu pedido ${pedido.numero} está confirmado.*`,
+    ``,
+    `🛋️ *${pedido.tipo_sofa}*${Number(pedido.cantidad) > 1 ? ` × ${pedido.cantidad}` : ''}`,
+    `🎨 Tela: ${pedido.material}`,
+    `📅 Entrega: *${fechaLarga(pedido.fecha_entrega)}*`,
+    ``,
+    `💰 Total: ${pesos(pedido.precio_venta)}`,
+  ]
+  if (abono > 0) {
+    lineas.push(`✔️ Abono: ${pesos(abono)}`)
+    lineas.push(`⏳ Saldo pendiente: *${pesos(saldo)}*`)
+  }
+  lineas.push(
+    `━━━━━━━━━━━━━━`,
+    `📍 Centro de Experiencia: Cra 19A #85-69, Bogotá`,
+    `¡Gracias por elegirnos! Cualquier duda, escríbenos por aquí.`,
+  )
+  return lineas.join('\n')
+}
+
+function cargarImagen(src) {
+  return new Promise((ok, mal) => {
+    const img = new Image()
+    img.onload = () => ok(img)
+    img.onerror = () => mal(new Error('no cargó el logo'))
+    img.src = src
+  })
+}
+
+async function dibujarComprobante(pedido, cliente) {
+  const W = 1080, H = Number(pedido.abono || 0) > 0 ? 1560 : 1400
+  const ORO = '#C9A84C', NEGRO = '#1a1a1a', CREMA = '#f4f1eb', GRIS = '#6b6b6b'
+  const c = document.createElement('canvas')
+  c.width = W; c.height = H
+  const g = c.getContext('2d')
+  const serif = 'Georgia, "Times New Roman", serif'
+  const sans = 'Helvetica, Arial, sans-serif'
+
+  // Fondo
+  g.fillStyle = CREMA; g.fillRect(0, 0, W, H)
+
+  // Encabezado negro con logo
+  g.fillStyle = NEGRO; g.fillRect(0, 0, W, 330)
+  try {
+    const logo = await cargarImagen('/logo-mrchester.png')
+    const lw = 400, lh = logo.height * (lw / logo.width)
+    g.drawImage(logo, (W - lw) / 2, 50, lw, lh)
+  } catch (e) { /* sin logo, sigue con el texto */ }
+  g.textAlign = 'center'
+  g.fillStyle = ORO
+  g.font = `bold 76px ${serif}`
+  g.fillText('M R .  C H E S T E R', W / 2, 220)
+  g.font = `24px ${sans}`
+  g.fillText('S O F Á S   Q U E   H A B L A N   D E   T I', W / 2, 270)
+
+  // Franja dorada
+  g.fillStyle = ORO; g.fillRect(0, 330, W, 70)
+  g.fillStyle = NEGRO; g.font = `bold 28px ${sans}`
+  g.fillText('C O N F I R M A C I Ó N   D E   P E D I D O', W / 2, 376)
+
+  // Tarjeta blanca
+  const conAbono = Number(pedido.abono || 0) > 0
+  const x0 = 70, y0 = 450, cw = W - 140, ch = conAbono ? 830 : 670
+  g.fillStyle = '#ffffff'
+  g.beginPath(); g.roundRect ? g.roundRect(x0, y0, cw, ch, 24) : g.rect(x0, y0, cw, ch); g.fill()
+
+  g.textAlign = 'left'
+  g.fillStyle = GRIS; g.font = `26px ${sans}`
+  g.fillText('PEDIDO', x0 + 50, y0 + 70)
+  g.fillStyle = NEGRO; g.font = `bold 84px ${serif}`
+  g.fillText(pedido.numero || '', x0 + 50, y0 + 160)
+  g.fillStyle = GRIS; g.font = `30px ${sans}`
+  g.fillText(String(cliente?.nombre || '').toUpperCase().slice(0, 40), x0 + 50, y0 + 210)
+
+  g.fillStyle = ORO; g.fillRect(x0 + 50, y0 + 240, 90, 4)
+
+  const abono = Number(pedido.abono || 0)
+  const saldo = Number(pedido.precio_venta) - abono
+  const filas = [
+    ['Referencia', String(pedido.tipo_sofa || '') + (Number(pedido.cantidad) > 1 ? `  × ${pedido.cantidad}` : '')],
+    ['Tela', String(pedido.material || '')],
+    ['Fecha de entrega', fechaLarga(pedido.fecha_entrega)],
+    ['Valor total', pesos(pedido.precio_venta)],
+  ]
+  if (abono > 0) filas.push(['Abono recibido', pesos(abono)])
+  let y = y0 + 310
+  filas.forEach(([k, v]) => {
+    g.fillStyle = GRIS; g.font = `28px ${sans}`; g.textAlign = 'left'
+    g.fillText(k, x0 + 50, y)
+    g.fillStyle = NEGRO; g.font = `bold 32px ${sans}`; g.textAlign = 'right'
+    let txt = v
+    while (g.measureText(txt).width > cw - 420 && txt.length > 4) txt = txt.slice(0, -2)
+    g.fillText(txt === v ? v : txt + '…', x0 + cw - 50, y)
+    g.strokeStyle = '#ece7dd'; g.lineWidth = 2
+    g.beginPath(); g.moveTo(x0 + 50, y + 28); g.lineTo(x0 + cw - 50, y + 28); g.stroke()
+    y += 78
+  })
+
+  // Saldo destacado
+  if (abono > 0) {
+    const by = y0 + ch - 136
+    g.fillStyle = NEGRO
+    g.beginPath(); g.roundRect ? g.roundRect(x0 + 40, by, cw - 80, 96, 16) : g.rect(x0 + 40, by, cw - 80, 96); g.fill()
+    g.textAlign = 'left'; g.fillStyle = ORO; g.font = `28px ${sans}`
+    g.fillText('SALDO PENDIENTE', x0 + 80, by + 60)
+    g.textAlign = 'right'; g.font = `bold 44px ${serif}`
+    g.fillText(pesos(saldo), x0 + cw - 80, by + 64)
+  }
+
+  // Pie
+  g.fillStyle = NEGRO; g.fillRect(0, H - 190, W, 190)
+  g.textAlign = 'center'; g.fillStyle = ORO; g.font = `bold 26px ${sans}`
+  g.fillText('MR. CHESTER EXPORT S.A.S.', W / 2, H - 125)
+  g.fillStyle = '#bdbdbd'; g.font = `24px ${sans}`
+  g.fillText('Centro de Experiencia: Cra 19A #85-69, Bogotá', W / 2, H - 82)
+  g.fillText('Fábrica: Calle 161 #92-21, Bogotá', W / 2, H - 46)
+
+  // Fecha de emisión
+  g.fillStyle = GRIS; g.font = `22px ${sans}`
+  g.fillText(`Emitido el ${fechaLarga(new Date().toISOString())}`, W / 2, y0 + ch + 55)
+
+  return new Promise((ok, mal) => c.toBlob(b => (b ? ok(b) : mal(new Error('no se generó la imagen'))), 'image/png'))
 }
