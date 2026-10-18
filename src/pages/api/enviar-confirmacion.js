@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
   const { pedido, cliente } = req.body
 
-  if (!cliente?.email && !pedido) {
+  if (!pedido) {
     return res.status(200).json({ ok: false, motivo: 'Sin datos' })
   }
 
@@ -195,22 +195,39 @@ export default async function handler(req, res) {
 </body>
 </html>`
 
-  // Destinatarios: cliente (si tiene email) + siempre josephtoledo@gmail.com
-  const destinatarios = ['josephtoledo@gmail.com']
-  if (cliente?.email && cliente.email !== 'josephtoledo@gmail.com') {
-    destinatarios.unshift(cliente.email)
+  // Remitente: dominio propio verificado en Resend. Mientras no esté verificado,
+  // Resend solo permite enviar desde onboarding@resend.dev a la cuenta dueña (copia interna).
+  const FROM_DOMINIO = process.env.RESEND_FROM || 'Mr. Chester Sofás <pedidos@envios.mrchester.com.co>'
+  const FROM_PRUEBA = 'Mr. Chester Sofás <onboarding@resend.dev>'
+  const COPIA = 'josephtoledo@gmail.com'
+  const subject = `Confirmación de pedido ${pedido.numero} — Mr. Chester Sofás`
+
+  async function enviar(to, from) {
+    try {
+      const { data, error } = await resend.emails.send({ from, to: [to], subject, html })
+      if (error) return { ok: false, error: error.message || String(error) }
+      return { ok: true, id: data?.id }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
   }
 
-  try {
-    await resend.emails.send({
-      from: 'Mr. Chester Sofás <onboarding@resend.dev>',
-      to: destinatarios,
-      subject: `Confirmación de pedido ${pedido.numero} — Mr. Chester Sofás`,
-      html
-    })
-    res.status(200).json({ ok: true })
-  } catch (error) {
-    console.error('Error enviando email:', error)
-    res.status(500).json({ ok: false, error: error.message })
+  let cliente_ok = false
+  let error = null
+  if (cliente?.email) {
+    const r = await enviar(cliente.email, FROM_DOMINIO)
+    cliente_ok = r.ok
+    if (!r.ok) {
+      error = /domain|verify|not verified/i.test(r.error || '')
+        ? 'El dominio de envío todavía no está verificado en Resend.'
+        : r.error
+    }
   }
+
+  // Copia interna: intenta con el dominio y, si no está listo, con el remitente de prueba
+  let copia = await enviar(COPIA, FROM_DOMINIO)
+  if (!copia.ok) copia = await enviar(COPIA, FROM_PRUEBA)
+
+  if (error) console.error('Correo al cliente falló:', error)
+  res.status(200).json({ ok: cliente_ok || !cliente?.email, cliente_ok, copia_ok: copia.ok, error })
 }
