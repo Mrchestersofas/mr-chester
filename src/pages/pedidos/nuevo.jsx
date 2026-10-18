@@ -45,28 +45,81 @@ export default function NuevoPedido() {
 
   function set(f, v) { setForm(p => ({ ...p, [f]: v })) }
 
+  const [errores, setErrores] = useState([])
+  const [resultado, setResultado] = useState(null)
+
+  function validar() {
+    const e = []
+    if (form.crear_cliente) {
+      if (!form.nuevo_nombre.trim()) e.push('Escribe el nombre del cliente.')
+      if (form.nuevo_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.nuevo_email.trim())) e.push('El correo del cliente no es válido.')
+    } else if (!form.cliente_id) e.push('Elige un cliente o crea uno nuevo.')
+    if (!prod) e.push('Elige la referencia del sofá.')
+    if (!form.tela_id) e.push('Elige la tela.')
+    if (!form.precio_venta || isNaN(Number(form.precio_venta)) || Number(form.precio_venta) <= 0) e.push('Escribe el precio de venta (solo números).')
+    if (!form.fecha_entrega) e.push('Elige la fecha de entrega.')
+    if (form.abono && isNaN(Number(form.abono))) e.push('El abono debe ser solo números.')
+    return e
+  }
+
+  async function enviarCorreo(pedido, cliente) {
+    try {
+      const r = await fetch('/api/enviar-confirmacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedido, cliente }),
+      })
+      const j = await r.json().catch(() => ({}))
+      return j
+    } catch (e) {
+      return { ok: false, error: 'No hubo conexión para enviar el correo.' }
+    }
+  }
+
+  async function anotar(pedido_id, nota) {
+    await supabase.from('historial_estados').insert({ pedido_id, estado_anterior: null, estado_nuevo: 'pendiente', nota })
+  }
+
+  async function reenviar() {
+    if (!resultado) return
+    setResultado(r => ({ ...r, correo: { enviando: true } }))
+    const correo = await enviarCorreo(resultado.pedido, resultado.cliente)
+    await anotar(resultado.pedido.id, correo.cliente_ok ? `Correo reenviado a ${resultado.cliente.email}` : `Reenvío falló: ${correo.error || 'sin detalle'}`)
+    setResultado(r => ({ ...r, correo }))
+  }
+
   async function guardar() {
-    if (!prod || !form.tela_id || !form.fecha_entrega || !form.precio_venta) return
+    const e = validar()
+    setErrores(e)
+    if (e.length) { window.scrollTo(0, 0); return }
     setGuardando(true)
 
     let cliente = null
 
-    if (form.crear_cliente && form.nuevo_nombre) {
-      const { data: nc } = await supabase.from('clientes').insert({
-        nombre: form.nuevo_nombre,
+    if (form.crear_cliente) {
+      const { data: nc, error: errC } = await supabase.from('clientes').insert({
+        nombre: form.nuevo_nombre.trim(),
         cedula: form.nuevo_cedula,
         direccion: form.nuevo_direccion,
         ciudad: form.nuevo_ciudad,
         telefono: form.nuevo_tel,
-        email: form.nuevo_email,
+        email: form.nuevo_email.trim() || null,
       }).select().single()
-      if (nc) cliente = nc
-    } else if (form.cliente_id) {
-      const { data: ec } = await supabase.from('clientes').select('*').eq('id', form.cliente_id).single()
-      if (ec) cliente = ec
+      if (errC || !nc) {
+        setErrores(['No se pudo guardar el cliente: ' + (errC?.message || 'error desconocido') + '. El pedido NO se guardó, intenta de nuevo.'])
+        setGuardando(false); window.scrollTo(0, 0); return
+      }
+      cliente = nc
+    } else {
+      const { data: ec, error: errE } = await supabase.from('clientes').select('*').eq('id', form.cliente_id).single()
+      if (errE || !ec) {
+        setErrores(['No se pudo leer el cliente. Revisa la conexión e intenta de nuevo.'])
+        setGuardando(false); window.scrollTo(0, 0); return
+      }
+      cliente = ec
     }
 
-    const { data: pedido } = await supabase.from('pedidos').insert({
+    const { data: pedido, error: errP } = await supabase.from('pedidos').insert({
       numero: '',
       cliente_id: cliente?.id || null,
       tipo_sofa: prod.referencia,
@@ -83,19 +136,20 @@ export default function NuevoPedido() {
       medio_pago: form.medio_pago,
     }).select().single()
 
-    if (pedido && cliente?.email) {
-      try {
-        await fetch('/api/enviar-confirmacion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pedido, cliente }),
-        })
-      } catch (e) {
-        console.error('No se pudo enviar el email:', e)
-      }
+    if (errP || !pedido) {
+      setErrores(['El pedido NO se guardó: ' + (errP?.message || 'error desconocido') + '. Tus datos siguen en el formulario, intenta de nuevo.'])
+      setGuardando(false); window.scrollTo(0, 0); return
     }
 
-    if (pedido) {
+    await anotar(pedido.id, `Pedido ${pedido.numero} creado`)
+
+    const correo = await enviarCorreo(pedido, cliente)
+    await anotar(pedido.id,
+      correo.cliente_ok ? `Correo de confirmación enviado a ${cliente.email}`
+      : cliente.email ? `Correo al cliente NO enviado: ${correo.error || 'sin detalle'}`
+      : 'Cliente sin correo: no se envió confirmación')
+
+    {
       try {
         await fetch('/api/programar-pedido', {
           method: 'POST',
@@ -113,12 +167,55 @@ export default function NuevoPedido() {
     }
 
     setGuardando(false)
-    router.push('/pedidos')
+    setResultado({ pedido, cliente, correo })
+    window.scrollTo(0, 0)
+  }
+
+  if (resultado) {
+    const { pedido, cliente, correo } = resultado
+    const saldo = Number(pedido.precio_venta) - Number(pedido.abono || 0)
+    const tel = (cliente?.telefono || '').replace(/\D/g, '')
+    const telWa = tel.length === 10 ? '57' + tel : tel
+    const msg = `Hola ${cliente?.nombre || ''}, tu pedido ${pedido.numero} en Mr. Chester quedó registrado.\n` +
+      `Sofá: ${pedido.tipo_sofa} · Tela: ${pedido.material} · Cantidad: ${pedido.cantidad}\n` +
+      `Entrega: ${pedido.fecha_entrega}\nTotal: $${Number(pedido.precio_venta).toLocaleString('es-CO')}` +
+      (Number(pedido.abono) ? ` · Abono: $${Number(pedido.abono).toLocaleString('es-CO')} · Saldo: $${saldo.toLocaleString('es-CO')}` : '') +
+      `\n¡Gracias por elegirnos!`
+    return (
+      <div className='p-4 max-w-2xl mx-auto'>
+        <div className='card space-y-4'>
+          <div className='rounded-lg bg-green-50 border border-green-200 p-4'>
+            <p className='text-sm text-green-700 font-semibold'>✓ Pedido registrado</p>
+            <p className='text-3xl font-bold mt-1'>{pedido.numero}</p>
+            <p className='text-sm text-gray-600 mt-1'>{cliente?.nombre} · {pedido.tipo_sofa} · entrega {pedido.fecha_entrega}</p>
+          </div>
+          <div className={`rounded-lg p-3 text-sm border ${correo?.enviando ? 'bg-gray-50 border-gray-200' : correo?.cliente_ok ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+            {correo?.enviando ? 'Enviando correo…'
+              : correo?.cliente_ok ? <>✓ Correo de confirmación enviado a <b>{cliente.email}</b></>
+              : !cliente?.email ? <>El cliente no tiene correo. Envíale la confirmación por WhatsApp.</>
+              : <>⚠ No se pudo enviar el correo a <b>{cliente.email}</b>.<br /><span className='text-gray-600'>{correo?.error}</span></>}
+            {correo?.copia_ok && <div className='text-gray-500 mt-1'>Copia enviada a josephtoledo@gmail.com</div>}
+          </div>
+          <div className='flex flex-col gap-2'>
+            {tel && <a className='btn btn-primary text-center' href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target='_blank' rel='noreferrer'>Enviar confirmación por WhatsApp</a>}
+            {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>Reintentar correo</button>}
+            <button className='btn' onClick={() => { setResultado(null); setForm(f => ({ ...f, cliente_id: '', referencia_id: '', tela_id: '', precio_venta: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', cantidad: 1, fecha_entrega: '' })) }}>Registrar otro pedido</button>
+            <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className='p-4 max-w-2xl mx-auto'>
       <h1 className='text-xl font-medium mb-5'>Nuevo pedido</h1>
+      {errores.length > 0 && (
+        <div className='mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700' role='alert'>
+          <b>Revisa esto antes de guardar:</b>
+          <ul className='list-disc ml-5 mt-1'>{errores.map(e => <li key={e}>{e}</li>)}</ul>
+        </div>
+      )}
       <div className='card space-y-6'>
 
         {/* CLIENTE */}
