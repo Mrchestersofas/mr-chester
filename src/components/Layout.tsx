@@ -3,7 +3,7 @@ import { useRouter } from 'next/router'
 import { useState } from 'react'
 import {
   LayoutDashboard, ClipboardList, PlusCircle,
-  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun
+  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText
 } from 'lucide-react'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: '/mi-dia',        label: 'Mi Día',        icon: Sun },
   { href: '/pedidos',       label: 'Pedidos',       icon: ClipboardList },
   { href: '/pedidos/nuevo', label: 'Nuevo pedido',  icon: PlusCircle },
+  { href: '/cotizaciones',  label: 'Cotizaciones',  icon: FileText },
   { href: '/produccion',    label: 'Producción',    icon: Wrench },
   { href: '/ventas',        label: 'Ventas',        icon: TrendingUp },
   { href: '/compras',       label: 'Compras',       icon: ShoppingCart },
