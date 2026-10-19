@@ -299,6 +299,20 @@ function VistaHoy({ rutina, tareas, segs, registro, fabrica, menu, mercado, marc
         )
       })()}
 
+      {(() => {
+        const pedidos = mercado.filter(m => m.pedido_por && !m.comprado && !String(m.lista).startsWith('_'))
+        return pedidos.length > 0 && (
+          <button onClick={() => setTab('menu')} className='w-full text-left rounded-xl p-4 mb-6 flex items-center gap-3 border' style={{ background: '#FBF6E9', borderColor: '#EADBB2' }}>
+            <span className='text-2xl'>🙋</span>
+            <span className='flex-1 min-w-0'>
+              <span className='block font-semibold' style={{ color: '#8C6A1F' }}>{pedidos[0].pedido_por} pidió {pedidos.length === 1 ? 'algo' : `${pedidos.length} cosas`}</span>
+              <span className='block text-sm text-gray-600 truncate'>{pedidos.map(p => p.item + (p.cantidad ? ` (${p.cantidad})` : '')).join(', ')}</span>
+            </span>
+            <span style={{ color: '#8C6A1F' }}>›</span>
+          </button>
+        )
+      })()}
+
       {dow >= 1 && dow <= 5 && menu.some(m => m.dia === dow) && (
         <Seccion titulo='Menú de hoy' accion={<BotonTexto onClick={() => setTab('menu')}>Ver semana</BotonTexto>}>
           <div className='space-y-3'>
