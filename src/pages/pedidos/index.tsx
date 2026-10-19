@@ -269,7 +269,7 @@ function ModalNovedades({ pedido, onClose }: { pedido: Pedido, onClose: () => vo
     await supabase.from('pedido_novedades').update({ visible_cliente: !n.visible_cliente }).eq('id', n.id)
     cargar()
   }
-  const link = typeof window !== 'undefined' ? `${window.location.origin}/seguimiento` : '/seguimiento'
+  const link = 'https://seguimiento.mrchester.com.co'
   const cliente: any = (pedido as any).cliente
   const tel = String(cliente?.telefono || '').replace(/\D/g, '')
   const telWa = tel.length === 10 ? '57' + tel : tel
