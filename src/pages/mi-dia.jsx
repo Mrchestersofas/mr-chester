@@ -117,7 +117,13 @@ function Acceso() {
 
 /* ---------------- Panel ---------------- */
 
-const PESTANAS = [['hoy', 'Hoy'], ['tareas', 'Tareas'], ['seg', 'Seguimientos'], ['hab', 'Hábitos'], ['rut', 'Rutina']]
+const PESTANAS = [['hoy', 'Hoy'], ['menu', 'Menú'], ['tareas', 'Tareas'], ['seg', 'Seguimientos'], ['hab', 'Hábitos'], ['rut', 'Rutina']]
+const PERSONAS = [['ninos', 'Niños'], ['monica', 'Mónica'], ['joseph', 'Joseph']]
+const COMIDA_N = { desayuno: 'Desayuno', lonchera: 'Lonchera', onces: 'Onces', almuerzo: 'Almuerzo', snack: 'Snack oficina', cena: 'Comida' }
+const COMIDAS_DE = { ninos: ['desayuno', 'lonchera', 'onces', 'cena'], monica: ['desayuno', 'almuerzo', 'cena'], joseph: ['almuerzo', 'snack', 'cena'] }
+const SECCIONES = ['Carnes y huevos', 'Lácteos', 'Panadería y granos', 'Frutos secos', 'Despensa y salsas', 'Lonchera', 'Frutas', 'Verduras', 'Aseo y hogar', 'Otros']
+const tiendasDe = mercado => [...new Set(mercado.filter(m => !String(m.lista).startsWith('_')).map(m => m.lista))]
+const diaTienda = (mercado, t) => { const x = mercado.find(m => m.lista === t && m.dia !== null && m.dia !== undefined); return x ? x.dia : null }
 
 function Panel({ session }) {
   const [tab, setTab] = useState('hoy')
@@ -127,6 +133,8 @@ function Panel({ session }) {
   const [tareas, setTareas] = useState([])
   const [segs, setSegs] = useState([])
   const [registro, setRegistro] = useState({})
+  const [menu, setMenu] = useState([])
+  const [mercado, setMercado] = useState([])
   const [fabrica, setFabrica] = useState(null)
   const [listo, setListo] = useState(false)
   const [error, setError] = useState(null)
@@ -135,15 +143,17 @@ function Panel({ session }) {
 
   async function cargar() {
     const desde = keyOf(addDays(new Date(), -120))
-    const [r, t, s, g] = await Promise.all([
+    const [r, t, s, g, mn, mc] = await Promise.all([
       supabase.from('mi_rutina').select('*'),
       supabase.from('mi_tareas').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('mi_seguimientos').select('*').order('created_at', { ascending: false }).limit(300),
       supabase.from('mi_registro').select('fecha,rutina_id').gte('fecha', desde),
+      supabase.from('mi_menu').select('*'),
+      supabase.from('mi_mercado').select('*').order('orden'),
     ])
-    const err = r.error || t.error || s.error || g.error
+    const err = r.error || t.error || s.error || g.error || mn.error || mc.error
     if (err) { setError('No se pudieron cargar tus datos: ' + err.message); return }
-    setRutina(r.data); setTareas(t.data); setSegs(s.data)
+    setRutina(r.data); setTareas(t.data); setSegs(s.data); setMenu(mn.data); setMercado(mc.data)
     const reg = {}
     g.data.forEach(x => { (reg[x.fecha] = reg[x.fecha] || new Set()).add(x.rutina_id) })
     setRegistro(reg); setError(null); setListo(true)
@@ -210,12 +220,13 @@ function Panel({ session }) {
       </div>
       {error && <div className='mb-4 rounded-lg bg-red-50 text-red-700 text-sm p-3'>{error}</div>}
       {!listo && !error && <div className='text-gray-400 text-sm'>Cargando tu día…</div>}
-      {listo && tab === 'hoy' && <VistaHoy {...{ rutina, tareas, segs, registro, fabrica, marcarRutina, marcarTarea, setHoja, setTab }} />}
+      {listo && tab === 'hoy' && <VistaHoy {...{ rutina, tareas, segs, registro, fabrica, menu, mercado, marcarRutina, marcarTarea, setHoja, setTab }} />}
+      {listo && tab === 'menu' && <VistaMenu {...{ menu, mercado, setMercado, setHoja, ejecutar }} />}
       {listo && tab === 'tareas' && <VistaTareas {...{ tareas, areaF, setAreaF, enArea, marcarTarea, setHoja }} />}
       {listo && tab === 'seg' && <VistaSeg {...{ segs, areaF, setAreaF, enArea, setHoja, ejecutar }} />}
       {listo && tab === 'hab' && <VistaHabitos {...{ rutina, registro }} />}
       {listo && tab === 'rut' && <VistaRutina {...{ rutina, rutDia, setRutDia, setHoja }} />}
-      {hoja && <Hoja hoja={hoja} cerrar={() => setHoja(null)} ejecutar={ejecutar} rutDia={rutDia} areaF={areaF} />}
+      {hoja && <Hoja hoja={hoja} cerrar={() => setHoja(null)} ejecutar={ejecutar} rutDia={rutDia} areaF={areaF} mercado={mercado} />}
     </div>
   )
 }
@@ -255,7 +266,7 @@ function FilaTarea({ t, marcarTarea, setHoja }) {
   )
 }
 
-function VistaHoy({ rutina, tareas, segs, registro, fabrica, marcarRutina, marcarTarea, setHoja, setTab }) {
+function VistaHoy({ rutina, tareas, segs, registro, fabrica, menu, mercado, marcarRutina, marcarTarea, setHoja, setTab }) {
   const d = new Date(), dow = d.getDay(), k = hoyKey()
   const items = rutina.filter(r => (r.dias || []).includes(dow)).sort(porHora)
   const hechos = registro[k] || new Set()
@@ -275,6 +286,41 @@ function VistaHoy({ rutina, tareas, segs, registro, fabrica, marcarRutina, marca
         <p className='text-xs text-gray-500 mt-1'>{n} de {items.length} de tu rutina · {vencidas.length} tareas para hoy · {revisar.length} seguimientos</p>
         <div className='h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden'><div className='h-full rounded-full transition-all' style={{ width: pct + '%', background: ORO }} /></div>
       </div>
+
+      {(() => {
+        const hoyT = tiendasDe(mercado).filter(t => diaTienda(mercado, t) === dow)
+        const faltan = mercado.filter(m => hoyT.includes(m.lista) && !m.comprado).length
+        return faltan > 0 && (
+          <button onClick={() => setTab('menu')} className='w-full text-left rounded-xl p-4 mb-6 flex items-center gap-3' style={{ background: '#1a1a1a', color: '#fff' }}>
+            <span className='text-2xl'>🛒</span>
+            <span className='flex-1'><span className='block font-semibold' style={{ color: ORO }}>Hoy toca mercado</span><span className='text-sm text-gray-300'>{faltan} productos pendientes · {hoyT.join(', ')}</span></span>
+            <span style={{ color: ORO }}>›</span>
+          </button>
+        )
+      })()}
+
+      {dow >= 1 && dow <= 5 && menu.some(m => m.dia === dow) && (
+        <Seccion titulo='Menú de hoy' accion={<BotonTexto onClick={() => setTab('menu')}>Ver semana</BotonTexto>}>
+          <div className='space-y-3'>
+            {PERSONAS.map(([p, pn]) => {
+              const del = COMIDAS_DE[p].map(c => menu.find(x => x.persona === p && x.dia === dow && x.comida === c)).filter(Boolean)
+              return del.length > 0 && (
+                <div key={p}>
+                  <div className='text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1'>{pn}</div>
+                  <Lista>
+                    {del.map(m => (
+                      <div key={m.id} className='flex gap-3 px-3 py-2.5 text-sm'>
+                        <span className='w-24 flex-none text-gray-500'>{COMIDA_N[m.comida]}</span>
+                        <span className='flex-1 min-w-0'>{m.plato}{m.nota && <span className='block text-xs text-gray-500'>{m.nota}</span>}</span>
+                      </div>
+                    ))}
+                  </Lista>
+                </div>
+              )
+            })}
+          </div>
+        </Seccion>
+      )}
 
       {fabrica && (
         <Seccion titulo='Fábrica' accion={<Link href='/pedidos' className='text-sm font-semibold' style={{ color: '#8C6A1F' }}>Ver pedidos</Link>}>
@@ -350,6 +396,131 @@ function Filtros({ areaF, setAreaF }) {
         </button>
       ))}
     </div>
+  )
+}
+
+function textoMercado(tienda, items) {
+  const pend = items.filter(m => m.lista === tienda && !m.comprado)
+  const secciones = [...new Set(pend.map(m => m.seccion))]
+  const d = diaTienda(items, tienda)
+  const lineas = [`🛒 *${tienda}*${d !== null ? ` · ${DOW_L[d]}` : ''}`, '']
+  secciones.forEach(sec => {
+    lineas.push(`*${sec}*`)
+    pend.filter(m => m.seccion === sec).forEach(m => lineas.push(`▫️ ${m.item}${m.cantidad ? ` — ${m.cantidad}` : ''}`))
+    lineas.push('')
+  })
+  lineas.push('Por favor revisa qué hay en la casa y compra lo que falte. ¡Gracias!')
+  return lineas.join('\n')
+}
+
+function VistaMenu({ menu, mercado, setMercado, setHoja, ejecutar }) {
+  const hoy = new Date().getDay()
+  const [persona, setPersona] = useState('ninos')
+  const [dia, setDia] = useState(hoy >= 1 && hoy <= 5 ? hoy : 1)
+  const tiendas = tiendasDe(mercado)
+  const [tienda, setTienda] = useState(null)
+  const [confirmar, setConfirmar] = useState(false)
+  const t = tienda && tiendas.includes(tienda) ? tienda : tiendas[0]
+  const items = mercado.filter(m => m.lista === t)
+  const secciones = SECCIONES.filter(x => items.some(m => m.seccion === x)).concat([...new Set(items.map(m => m.seccion))].filter(x => !SECCIONES.includes(x)))
+  const pend = items.filter(m => !m.comprado).length
+  const dT = diaTienda(mercado, t)
+
+  async function marcar(m) {
+    setMercado(xs => xs.map(x => x.id === m.id ? { ...x, comprado: !m.comprado } : x))
+    await ejecutar(supabase.from('mi_mercado').update({ comprado: !m.comprado }).eq('id', m.id))
+  }
+  async function nuevaSemana() {
+    if (!confirmar) { setConfirmar(true); return }
+    setConfirmar(false)
+    await ejecutar(supabase.from('mi_mercado').update({ comprado: false }).eq('lista', t))
+  }
+  async function cambiarDia(v) {
+    await ejecutar(supabase.from('mi_mercado').update({ dia: v === '' ? null : Number(v) }).eq('lista', t))
+  }
+  const chip = (activo) => activo ? { background: '#1c1917', color: '#fff', borderColor: '#1c1917' } : { borderColor: '#e7e5e4' }
+
+  return (
+    <>
+      <Seccion titulo='Menú de la semana'>
+        <div className='flex gap-1.5 mb-2'>
+          {PERSONAS.map(([k, n]) => (
+            <button key={k} onClick={() => setPersona(k)} className='flex-1 px-2 py-2 rounded-lg text-sm border font-medium'
+              style={persona === k ? { background: '#1a1a1a', color: ORO, borderColor: '#1a1a1a' } : { borderColor: '#e7e5e4' }}>{n}</button>
+          ))}
+        </div>
+        <div className='flex gap-1.5 overflow-x-auto mb-3'>
+          {[1, 2, 3, 4, 5].map(i => (
+            <button key={i} onClick={() => setDia(i)} className='flex-none px-3 py-1 rounded-full text-sm border' style={chip(dia === i)}>{DOW[i]}</button>
+          ))}
+        </div>
+        <Lista>
+          {COMIDAS_DE[persona].map(c => {
+            const m = menu.find(x => x.persona === persona && x.dia === dia && x.comida === c)
+            return (
+              <button key={c} onClick={() => setHoja({ tipo: 'menu', item: m || { persona, dia, comida: c } })} className='w-full text-left flex gap-3 px-3 py-3'>
+                <span className='w-24 flex-none text-sm text-gray-500'>{COMIDA_N[c]}</span>
+                <span className='flex-1 min-w-0 text-sm'>
+                  {m ? <>{m.plato}{m.nota && <span className='block text-xs text-gray-500 mt-0.5'>{m.nota}</span>}</> : <span className='text-gray-400'>+ Agregar</span>}
+                </span>
+              </button>
+            )
+          })}
+        </Lista>
+        <p className='text-xs text-gray-500 mt-2'>Toca una comida para cambiarla.</p>
+      </Seccion>
+
+      <Seccion titulo='Listas de mercado'>
+        <div className='flex gap-1.5 overflow-x-auto mb-3 pb-1'>
+          {tiendas.map(k => {
+            const d = diaTienda(mercado, k)
+            const p = mercado.filter(m => m.lista === k && !m.comprado).length
+            return (
+              <button key={k} onClick={() => { setTienda(k); setConfirmar(false) }} className='flex-none px-3 py-2 rounded-lg text-sm border font-medium text-left'
+                style={k === t ? { background: '#1a1a1a', color: ORO, borderColor: '#1a1a1a' } : { borderColor: '#e7e5e4' }}>
+                {k}<span className='block text-xs font-normal opacity-75'>{d !== null ? DOW_L[d] : 'sin día'} · {p}</span>
+              </button>
+            )
+          })}
+        </div>
+        {t && (
+          <>
+            <div className='flex items-center gap-2 mb-3 text-sm'>
+              <label htmlFor='md-diat' className='text-gray-500'>Se compra el</label>
+              <select id='md-diat' value={dT === null ? '' : dT} onChange={e => cambiarDia(e.target.value)} style={{ width: 'auto' }}>
+                <option value=''>sin día fijo</option>
+                {DOW_L.map((n, i) => <option key={i} value={i}>{n}</option>)}
+              </select>
+            </div>
+            <div className='flex flex-col gap-2 mb-4'>
+              <a className='btn btn-primary justify-center' href={`https://wa.me/?text=${encodeURIComponent(textoMercado(t, mercado))}`} target='_blank' rel='noreferrer'>Enviar lista de {t} por WhatsApp ({pend})</a>
+              <div className='flex gap-2'>
+                <button className='btn flex-1 justify-center' onClick={() => setHoja({ tipo: 'item', item: { lista: t } })}>+ Producto</button>
+                <button className='btn flex-1 justify-center' onClick={nuevaSemana}>{confirmar ? 'Toca otra vez para confirmar' : 'Nueva semana (desmarcar)'}</button>
+              </div>
+            </div>
+            {secciones.map(sec => (
+              <div key={sec} className='mb-4'>
+                <div className='text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5'>{sec}</div>
+                <Lista>
+                  {items.filter(m => m.seccion === sec).map(m => (
+                    <div key={m.id} className='flex items-center gap-3 px-3 py-2.5'>
+                      <Check on={m.comprado} onClick={() => marcar(m)} label={`Comprado ${m.item}`} />
+                      <div className='flex-1 min-w-0 text-sm'>
+                        <span className={m.comprado ? 'line-through text-gray-400' : 'font-medium'}>{m.item}</span>
+                        {m.cantidad && <span className='text-gray-500'> · {m.cantidad}</span>}
+                      </div>
+                      <BotonTexto onClick={() => setHoja({ tipo: 'item', item: m })}>Editar</BotonTexto>
+                    </div>
+                  ))}
+                </Lista>
+              </div>
+            ))}
+          </>
+        )}
+        {!tiendas.length && <Vacio>No hay listas todavía. Agrega el primer producto.</Vacio>}
+      </Seccion>
+    </>
   )
 }
 
@@ -508,26 +679,38 @@ function VistaRutina({ rutina, rutDia, setRutDia, setHoja }) {
 
 /* ---------------- Formulario (hoja inferior) ---------------- */
 
-function Hoja({ hoja, cerrar, ejecutar, rutDia, areaF }) {
+function Hoja({ hoja, cerrar, ejecutar, rutDia, areaF, mercado = [] }) {
   const { tipo, item } = hoja
   const i = item || {}
   const areaInicial = i.area || (areaF !== 'all' ? areaF : tipo === 'rutina' ? 'personal' : 'chester')
   const [f, setF] = useState({
     titulo: i.titulo || '', area: areaInicial, fecha: i.fecha || '', proxima: i.proxima || keyOf(addDays(new Date(), 7)),
     con_quien: i.con_quien || '', pedido_numero: i.pedido_numero || '', hora: (i.hora || '08:00').slice(0, 5),
-    dias: i.dias || [rutDia], habito: !!i.habito, nota: '',
+    dias: i.dias || [rutDia], habito: !!i.habito, nota: tipo === 'menu' ? (i.nota || '') : '',
+    plato: i.plato || '', item: i.item || '', cantidad: i.cantidad || '', seccion: i.seccion || 'Frutas', lista: i.lista || 'D1', nuevaTienda: '',
   })
   const [guardando, setGuardando] = useState(false)
   const [borrar, setBorrar] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
-  const titulos = { tarea: item ? 'Editar tarea' : 'Nueva tarea', seg: item ? 'Editar seguimiento' : 'Nuevo seguimiento', avance: 'Registrar avance', rutina: item ? 'Editar rutina' : 'Agregar a la rutina' }
-  const tabla = { tarea: 'mi_tareas', seg: 'mi_seguimientos', rutina: 'mi_rutina' }[tipo]
+  const esNuevo = !i.id
+  const titulos = { menu: `${(PERSONAS.find(p => p[0] === i.persona) || [])[1] || ''} · ${DOW_L[i.dia] || ''} · ${COMIDA_N[i.comida] || ''}`, item: esNuevo ? 'Nuevo producto' : 'Editar producto', tarea: item ? 'Editar tarea' : 'Nueva tarea', seg: item ? 'Editar seguimiento' : 'Nuevo seguimiento', avance: 'Registrar avance', rutina: item ? 'Editar rutina' : 'Agregar a la rutina' }
+  const tabla = { tarea: 'mi_tareas', seg: 'mi_seguimientos', rutina: 'mi_rutina', menu: 'mi_menu', item: 'mi_mercado' }[tipo]
   const pedidoLimpio = v => { const s = v.trim().toUpperCase().replace(/\s/g, ''); return !s ? null : /^\d+$/.test(s) ? 'MC-' + s.padStart(3, '0') : s }
 
   async function guardar(e) {
     e.preventDefault()
     let q
-    if (tipo === 'avance') {
+    if (tipo === 'menu') {
+      if (!f.plato.trim()) return
+      const d = { persona: i.persona || 'ninos', dia: i.dia, comida: i.comida, plato: f.plato.trim(), nota: f.nota.trim() || null }
+      q = esNuevo ? supabase.from('mi_menu').insert(d) : supabase.from('mi_menu').update(d).eq('id', i.id)
+    } else if (tipo === 'item') {
+      if (!f.item.trim()) return
+      const tienda = f.lista === '__nueva' ? f.nuevaTienda.trim() : f.lista
+      if (!tienda) return
+      const d = { lista: tienda, seccion: f.seccion, item: f.item.trim(), cantidad: f.cantidad.trim() || null, dia: diaTienda(mercado, tienda) }
+      q = esNuevo ? supabase.from('mi_mercado').insert({ ...d, orden: 999 }) : supabase.from('mi_mercado').update(d).eq('id', i.id)
+    } else if (tipo === 'avance') {
       if (!f.nota.trim()) return
       q = supabase.from('mi_seguimientos').update({ notas: [...(i.notas || []), { d: hoyKey(), t: f.nota.trim() }].slice(-50), proxima: f.proxima || null }).eq('id', i.id)
     } else {
@@ -556,7 +739,22 @@ function Hoja({ hoja, cerrar, ejecutar, rutDia, areaF }) {
     <div className='fixed inset-0 z-40 bg-black/40 flex items-end md:items-center justify-center' onClick={cerrar}>
       <form onSubmit={guardar} onClick={e => e.stopPropagation()} className='bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto' style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}>
         <h2 className='text-lg font-semibold'>{titulos[tipo]}</h2>
-        {tipo === 'avance' ? (
+        {tipo === 'menu' ? (
+          <>
+            {campo('h-plato', 'Plato', <textarea id='h-plato' rows={2} value={f.plato} onChange={e => set('plato', e.target.value)} autoFocus required />)}
+            {campo('h-nota', 'Nota para la señora (opcional)', <input id='h-nota' value={f.nota} onChange={e => set('nota', e.target.value)} placeholder='Ej: dejarlo listo temprano' />)}
+          </>
+        ) : tipo === 'item' ? (
+          <>
+            {campo('h-item', 'Producto', <input id='h-item' value={f.item} onChange={e => set('item', e.target.value)} autoFocus required />)}
+            <div className='grid grid-cols-2 gap-3'>
+              {campo('h-cant', 'Cantidad', <input id='h-cant' value={f.cantidad} onChange={e => set('cantidad', e.target.value)} placeholder='Ej: 1 kg' />)}
+              {campo('h-sec', 'Sección', <select id='h-sec' value={f.seccion} onChange={e => set('seccion', e.target.value)}>{SECCIONES.map(x => <option key={x}>{x}</option>)}</select>)}
+            </div>
+            {campo('h-lista', 'Tienda', <select id='h-lista' value={f.lista} onChange={e => set('lista', e.target.value)}>{[...new Set([...tiendasDe(mercado), f.lista].filter(x => x && x !== '__nueva'))].map(k => <option key={k} value={k}>{k}</option>)}<option value='__nueva'>Otra tienda…</option></select>)}
+            {f.lista === '__nueva' && campo('h-nt', 'Nombre de la tienda', <input id='h-nt' value={f.nuevaTienda} onChange={e => set('nuevaTienda', e.target.value)} />)}
+          </>
+        ) : tipo === 'avance' ? (
           <>
             <p className='text-sm text-gray-500'>{i.titulo}</p>
             {campo('h-nota', '¿Qué pasó?', <textarea id='h-nota' rows={3} value={f.nota} onChange={e => set('nota', e.target.value)} autoFocus required />)}
@@ -591,7 +789,7 @@ function Hoja({ hoja, cerrar, ejecutar, rutDia, areaF }) {
           </>
         )}
         <div className='flex items-center justify-between gap-2 pt-2'>
-          <div>{item && tipo !== 'avance' && <button type='button' className='btn' style={{ color: '#B4561F' }} onClick={eliminar} disabled={guardando}>{borrar ? 'Toca otra vez para borrar' : 'Borrar'}</button>}</div>
+          <div>{item && !esNuevo && tipo !== 'avance' && <button type='button' className='btn' style={{ color: '#B4561F' }} onClick={eliminar} disabled={guardando}>{borrar ? 'Toca otra vez para borrar' : 'Borrar'}</button>}</div>
           <div className='flex gap-2'>
             <button type='button' className='btn' onClick={cerrar}>Cancelar</button>
             <button className='btn btn-primary' disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
