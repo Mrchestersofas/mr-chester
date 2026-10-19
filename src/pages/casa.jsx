@@ -85,12 +85,14 @@ function Panel({ session }) {
   const [listo, setListo] = useState(false)
   const [pidiendo, setPidiendo] = useState(false)
   const [aviso, setAviso] = useState(null)
+  const [waDueno, setWaDueno] = useState('')
+  const [ultimoPedido, setUltimoPedido] = useState(null)
 
   async function cargar() {
     const uid = session.user.id
-    const { data: mem } = await supabase.from('mi_hogar_miembros').select('owner,nombre').eq('miembro', uid).maybeSingle()
+    const { data: mem } = await supabase.from('mi_hogar_miembros').select('owner,nombre,whatsapp_dueno').eq('miembro', uid).maybeSingle()
     const own = mem ? mem.owner : uid
-    setOwner(own); setNombre(mem ? mem.nombre : '')
+    setOwner(own); setNombre(mem ? mem.nombre : ''); setWaDueno(mem && mem.whatsapp_dueno ? mem.whatsapp_dueno : '')
     guardarModo(!!mem) // solo el celular de la casa abre directo esta página
     const [mn, mc] = await Promise.all([
       supabase.from('mi_menu').select('*').eq('owner', own),
@@ -130,7 +132,8 @@ function Panel({ session }) {
           <button onClick={() => setPidiendo(true)} className='w-full rounded-2xl py-4 text-lg font-bold shadow-lg' style={{ background: ORO, color: NEGRO }}>+ Pedir algo que falta</button>
         </div>
       </div>
-      {pidiendo && <Pedir {...{ owner, nombre, mercado, cerrar: () => setPidiendo(false), listo: async (txt) => { setPidiendo(false); setAviso(txt); setTimeout(() => setAviso(null), 4000); await cargar() } }} />}
+      {pidiendo && <Pedir {...{ owner, nombre, mercado, cerrar: () => setPidiendo(false), listo: async (pedido) => { setPidiendo(false); setUltimoPedido(pedido); await cargar() } }} />}
+      {ultimoPedido && <Avisar pedido={ultimoPedido} nombre={nombre} wa={waDueno} cerrar={() => setUltimoPedido(null)} />}
     </div>
   )
 }
@@ -283,6 +286,24 @@ function Mercado({ mercado, marcar }) {
   )
 }
 
+function Avisar({ pedido, nombre, wa, cerrar }) {
+  const texto = `Hola Joseph, soy ${nombre || 'Lucellis'}. Hace falta: ${pedido.item}${pedido.cantidad ? ` (${pedido.cantidad})` : ''}${pedido.tienda ? `, se compra en ${pedido.tienda}` : ''}. Ya lo dejé anotado en La Casa.`
+  const link = `https://wa.me/${wa || ''}?text=${encodeURIComponent(texto)}`
+  return (
+    <div className='fixed inset-0 z-40 bg-black/40 flex items-end justify-center' onClick={cerrar}>
+      <div onClick={e => e.stopPropagation()} className='bg-white w-full max-w-xl rounded-t-2xl p-5 space-y-3' style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+        <div className='rounded-xl p-3 bg-green-50 text-green-800 font-semibold'>✓ Quedó anotado: {pedido.item}</div>
+        <p className='text-gray-700'>Ahora avísale a Joseph para que lo vea de una vez:</p>
+        <a href={link} target='_blank' rel='noreferrer' onClick={() => setTimeout(cerrar, 500)}
+          className='flex items-center justify-center gap-2 w-full rounded-2xl py-4 text-lg font-bold text-white' style={{ background: '#25D366' }}>
+          Avisarle a Joseph por WhatsApp
+        </a>
+        <button onClick={cerrar} className='w-full py-3 rounded-xl border border-gray-200 font-semibold text-gray-600'>No es urgente, cerrar</button>
+      </div>
+    </div>
+  )
+}
+
 function Pedir({ owner, nombre, mercado, cerrar, listo }) {
   const tiendas = tiendasDe(mercado).filter(t => t !== LISTA_PEDIDOS)
   const [item, setItem] = useState('')
@@ -301,7 +322,7 @@ function Pedir({ owner, nombre, mercado, cerrar, listo }) {
     })
     setGuardando(false)
     if (err) { setError('No se pudo enviar. Revisa el internet e intenta de nuevo.'); return }
-    listo(`✓ Listo, se le avisó a Joseph: ${item.trim()}`)
+    listo({ item: item.trim(), cantidad: cantidad.trim(), tienda })
   }
   return (
     <div className='fixed inset-0 z-40 bg-black/40 flex items-end justify-center' onClick={cerrar}>
