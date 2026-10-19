@@ -1,215 +1,97 @@
 // Archivo: src/pages/api/resumen-diario.js
-// Cron: todos los días a las 8am Colombia (13:00 UTC)
-
+// Cron: todos los días a las 8 a. m. Colombia (13:00 UTC). Correo a Joseph con:
+// lo que toca comprar hoy (por proveedor) y los pedidos en producción.
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 const resend = new Resend(process.env.RESEND_API_KEY)
+const FROM = process.env.RESEND_FROM || 'Mr. Chester Sofás <pedidos@envios.mrchester.com.co>'
+
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const pesos = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
+const num = n => Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+function hoyISO() { return new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10) }
+function fechaTexto(iso) { const d = new Date(iso + 'T12:00:00Z'); return `${DIAS[d.getUTCDay()]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}` }
+function totalProv(p) { return (p.insumos || []).reduce((s, i) => s + Number(i.precio) * Number(i.cantidad), 0) + Number(p.costo_fijo || 0) }
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).end()
+  if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).end()
 
-  const fecha = new Date().toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
-  const fmt   = (n) => Number(n || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
+  const hoy = hoyISO()
+  const dia = new Date(hoy + 'T12:00:00Z').getUTCDay()
 
-  // 1. Materiales bajo mínimo
-  const { data: materiales } = await supabase.from('materiales').select('*').eq('tipo', 'stock').order('proveedor')
-  const alertas = (materiales || []).filter(m => m.stock_actual < m.stock_minimo)
+  const [{ data: provs }, { data: pedidos }] = await Promise.all([
+    supabase.from('compra_proveedores').select('*, insumos:compra_insumos(*)').eq('activo', true).order('orden'),
+    supabase.from('pedidos').select('*, cliente:clientes(nombre)')
+      .in('estado', ['pendiente', 'estructura', 'tapizado', 'costura', 'control_calidad'])
+      .order('fecha_entrega', { ascending: true }),
+  ])
+  const deHoy = (provs || []).filter(p => (p.dias || []).includes(dia))
+    .map(p => ({ ...p, insumos: (p.insumos || []).filter(i => i.activo).sort((a, b) => a.orden - b.orden) }))
+  const totalHoy = deHoy.reduce((s, p) => s + totalProv(p), 0)
 
-  // 2. Pedidos activos
-  const { data: pedidos } = await supabase
-    .from('pedidos')
-    .select('*, cliente:clientes(nombre)')
-    .in('estado', ['pendiente', 'estructura', 'tapizado', 'costura', 'control_calidad'])
-    .order('fecha_entrega', { ascending: true })
-
-  // 3. Agrupar alertas por proveedor
-  const porProveedor = {}
-  for (const m of alertas) {
-    const prov = m.proveedor || 'Sin proveedor'
-    if (!porProveedor[prov]) porProveedor[prov] = []
-    const cantComprar = m.stock_minimo - m.stock_actual
-    porProveedor[prov].push({ ...m, cant_comprar: cantComprar, subtotal: cantComprar * m.costo_unitario })
-  }
-
-  const totalGeneral = alertas.reduce((s, m) => {
-    const cant = m.stock_minimo - m.stock_actual
-    return s + cant * m.costo_unitario
-  }, 0)
-
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f4f1eb;font-family:Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1eb;padding:40px 20px;">
-<tr><td align="center">
-<table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%;">
-
-  <!-- Header -->
-  <tr>
-    <td style="background:#1a1a1a;padding:32px 40px 24px;text-align:center;border-radius:8px 8px 0 0;">
-      <h1 style="margin:0;color:#C9A84C;font-size:26px;font-weight:700;letter-spacing:4px;">MR. CHESTER</h1>
-      <p style="margin:6px 0 0;color:#C9A84C;font-size:10px;letter-spacing:3px;">SOFÁS QUE HABLAN DE TI.</p>
-      <div style="width:40px;height:1px;background:#C9A84C;margin:12px auto 0;"></div>
-    </td>
-  </tr>
-
-  <tr>
-    <td style="background:#C9A84C;padding:10px 40px;text-align:center;">
-      <p style="margin:0;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-weight:700;">📋 RESUMEN DIARIO · ORDEN DE COMPRA · 8:00 AM</p>
-    </td>
-  </tr>
-
-  <tr>
-    <td style="background:#fff;padding:40px;">
-      <p style="margin:0 0 28px;color:#888;font-size:13px;text-transform:capitalize;">${fecha}</p>
-
-      <!-- Tarjetas resumen -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:36px;">
-        <tr>
-          <td style="text-align:center;padding:16px;background:#f9f6f0;border-radius:8px;width:25%;">
-            <p style="margin:0;font-size:26px;font-weight:700;color:#6d28d9;">${pedidos?.length || 0}</p>
-            <p style="margin:4px 0 0;font-size:11px;color:#888;">Pedidos activos</p>
-          </td>
-          <td style="width:10px;"></td>
-          <td style="text-align:center;padding:16px;background:${alertas.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;width:25%;">
-            <p style="margin:0;font-size:26px;font-weight:700;color:${alertas.length > 0 ? '#dc2626' : '#16a34a'};">${alertas.length}</p>
-            <p style="margin:4px 0 0;font-size:11px;color:#888;">Items a comprar</p>
-          </td>
-          <td style="width:10px;"></td>
-          <td style="text-align:center;padding:16px;background:#f9f6f0;border-radius:8px;width:25%;">
-            <p style="margin:0;font-size:18px;font-weight:700;color:#C9A84C;">${fmt(totalGeneral)}</p>
-            <p style="margin:4px 0 0;font-size:11px;color:#888;">Total a invertir</p>
-          </td>
-          <td style="width:10px;"></td>
-          <td style="text-align:center;padding:16px;background:#f9f6f0;border-radius:8px;width:25%;">
-            <p style="margin:0;font-size:26px;font-weight:700;color:#1a1a1a;">${Object.keys(porProveedor).length}</p>
-            <p style="margin:4px 0 0;font-size:11px;color:#888;">Proveedores</p>
-          </td>
-        </tr>
-      </table>
-
-      ${alertas.length === 0 ? `
-      <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:20px 24px;border-radius:0 8px 8px 0;margin-bottom:32px;">
-        <p style="margin:0;color:#16a34a;font-size:15px;font-weight:600;">✓ Inventario completo — No hay compras pendientes hoy</p>
-      </div>` : `
-
-      <!-- Órdenes por proveedor -->
-      <p style="margin:0 0 20px;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-weight:700;border-bottom:2px solid #C9A84C;padding-bottom:8px;">🛒 ÓRDENES DE COMPRA POR PROVEEDOR</p>
-
-      ${Object.entries(porProveedor).map(([prov, items]) => {
-        const totalProv = items.reduce((s, i) => s + i.subtotal, 0)
-        return `
-        <div style="margin-bottom:28px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-          <div style="background:#1a1a1a;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;">
-            <div>
-              <p style="margin:0;color:#C9A84C;font-size:13px;font-weight:700;letter-spacing:1px;">${prov.toUpperCase()}</p>
-              <p style="margin:2px 0 0;color:#888;font-size:11px;">${items.length} material(es)</p>
-            </div>
-            <p style="margin:0;color:#fff;font-size:15px;font-weight:700;">${fmt(totalProv)}</p>
-          </div>
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr style="background:#f9f6f0;">
-              <th style="padding:10px 16px;font-size:11px;color:#666;text-align:left;font-weight:600;">MATERIAL</th>
-              <th style="padding:10px 16px;font-size:11px;color:#666;text-align:center;font-weight:600;">STOCK ACTUAL</th>
-              <th style="padding:10px 16px;font-size:11px;color:#666;text-align:center;font-weight:600;">MÍNIMO</th>
-              <th style="padding:10px 16px;font-size:11px;color:#666;text-align:center;font-weight:600;">A COMPRAR</th>
-              <th style="padding:10px 16px;font-size:11px;color:#666;text-align:right;font-weight:600;">COSTO UNIT.</th>
-              <th style="padding:10px 16px;font-size:11px;color:#666;text-align:right;font-weight:600;">SUBTOTAL</th>
-            </tr>
-            ${items.map((m, i) => `
-            <tr style="border-top:1px solid #f0ebe0;background:${i % 2 === 0 ? '#fff' : '#fafafa'};">
-              <td style="padding:12px 16px;font-size:13px;color:#1a1a1a;font-weight:600;">
-                ${m.stock_actual === 0 ? '<span style="color:#dc2626;margin-right:4px;">🚨</span>' : '<span style="margin-right:4px;">⚠️</span>'}${m.nombre}
-                <span style="color:#999;font-size:11px;margin-left:4px;">(${m.unidad})</span>
-              </td>
-              <td style="padding:12px 16px;font-size:13px;color:${m.stock_actual === 0 ? '#dc2626' : '#d97706'};font-weight:600;text-align:center;">${m.stock_actual}</td>
-              <td style="padding:12px 16px;font-size:13px;color:#555;text-align:center;">${m.stock_minimo}</td>
-              <td style="padding:12px 16px;font-size:14px;color:#1a1a1a;font-weight:700;text-align:center;">${m.cant_comprar} ${m.unidad}</td>
-              <td style="padding:12px 16px;font-size:13px;color:#555;text-align:right;">${fmt(m.costo_unitario)}</td>
-              <td style="padding:12px 16px;font-size:13px;color:#C9A84C;font-weight:700;text-align:right;">${fmt(m.subtotal)}</td>
-            </tr>`).join('')}
-            <tr style="border-top:2px solid #C9A84C;background:#f9f6f0;">
-              <td colspan="5" style="padding:12px 16px;font-size:13px;color:#1a1a1a;font-weight:700;text-align:right;">TOTAL ${prov.toUpperCase()}</td>
-              <td style="padding:12px 16px;font-size:15px;color:#C9A84C;font-weight:700;text-align:right;">${fmt(totalProv)}</td>
-            </tr>
-          </table>
-        </div>`
-      }).join('')}
-
-      <!-- Total general -->
-      <div style="background:#1a1a1a;padding:20px 24px;border-radius:8px;margin-bottom:28px;">
+  const bloqueCompras = deHoy.length === 0
+    ? `<div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:18px 22px;margin-bottom:28px;"><p style="margin:0;color:#16a34a;font-size:15px;font-weight:600;">✓ Hoy no hay compras programadas</p></div>`
+    : deHoy.map(p => `
+      <div style="margin-bottom:20px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a1a;"><tr>
+          <td style="padding:12px 18px;color:#C9A84C;font-size:13px;font-weight:700;letter-spacing:1px;">${esc(p.nombre).toUpperCase()}${p.contacto ? `<br><span style="color:#999;font-weight:400;letter-spacing:0;">${esc(p.contacto)}${p.whatsapp ? ' · ' + esc(p.whatsapp) : ''}</span>` : ''}</td>
+          <td style="padding:12px 18px;color:#fff;font-size:15px;font-weight:700;text-align:right;">${pesos(totalProv(p))}</td>
+        </tr></table>
         <table width="100%" cellpadding="0" cellspacing="0">
-          <tr>
-            <td style="color:#888;font-size:13px;">Total proveedores: <b style="color:#fff;">${Object.keys(porProveedor).length}</b></td>
-            <td style="color:#888;font-size:13px;text-align:center;">Total ítems: <b style="color:#fff;">${alertas.length}</b></td>
-            <td style="text-align:right;">
-              <p style="margin:0;color:#C9A84C;font-size:11px;letter-spacing:1px;">INVERSIÓN TOTAL</p>
-              <p style="margin:4px 0 0;color:#fff;font-size:24px;font-weight:700;">${fmt(totalGeneral)}</p>
-            </td>
-          </tr>
+          ${p.insumos.map(i => `<tr style="border-top:1px solid #f0ebe0;">
+            <td style="padding:9px 18px;font-size:13px;color:#1a1a1a;">${num(i.cantidad)} ${esc(i.unidad || '')} · ${esc(i.nombre)}</td>
+            <td style="padding:9px 18px;font-size:13px;color:#555;text-align:right;">${pesos(i.precio * i.cantidad)}</td></tr>`).join('')}
+          ${Number(p.costo_fijo) > 0 ? `<tr style="border-top:1px solid #f0ebe0;"><td style="padding:9px 18px;font-size:13px;color:#555;">${esc(p.costo_fijo_nombre || 'Transporte')}</td><td style="padding:9px 18px;font-size:13px;color:#555;text-align:right;">${pesos(p.costo_fijo)}</td></tr>` : ''}
         </table>
-      </div>`}
+      </div>`).join('') + `
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a1a;border-radius:8px;margin-bottom:28px;"><tr>
+        <td style="padding:16px 20px;color:#C9A84C;font-size:12px;letter-spacing:2px;font-weight:700;">TOTAL COMPRAS DE HOY</td>
+        <td style="padding:16px 20px;color:#fff;font-size:22px;font-weight:700;text-align:right;">${pesos(totalHoy)}</td>
+      </tr></table>
+      <p style="margin:0 0 28px;text-align:center;"><a href="https://mrchester-produccion.vercel.app/compras" style="display:inline-block;background:#C9A84C;color:#1a1a1a;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:6px;">PEDIR DESDE EL ERP</a></p>`
 
-      <!-- Pedidos activos -->
-      ${pedidos && pedidos.length > 0 ? `
+  const bloquePedidos = pedidos && pedidos.length ? `
       <p style="margin:0 0 12px;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-weight:700;border-bottom:2px solid #C9A84C;padding-bottom:8px;">🛋️ PEDIDOS EN PRODUCCIÓN (${pedidos.length})</p>
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-        <tr style="background:#f9f6f0;">
-          <th style="padding:10px 12px;font-size:11px;color:#666;text-align:left;">PEDIDO</th>
-          <th style="padding:10px 12px;font-size:11px;color:#666;text-align:left;">CLIENTE</th>
-          <th style="padding:10px 12px;font-size:11px;color:#666;text-align:left;">PRODUCTO</th>
-          <th style="padding:10px 12px;font-size:11px;color:#666;text-align:left;">ESTADO</th>
-          <th style="padding:10px 12px;font-size:11px;color:#666;text-align:right;">ENTREGA</th>
-        </tr>
-        ${pedidos.map((p, i) => {
-          const dias = Math.ceil((new Date(p.fecha_entrega) - new Date()) / (1000 * 60 * 60 * 24))
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+        ${pedidos.map(p => {
+          const dias = Math.ceil((new Date(p.fecha_entrega + 'T12:00:00Z') - new Date(hoy + 'T12:00:00Z')) / 86400000)
           const color = dias < 0 ? '#dc2626' : dias <= 3 ? '#d97706' : '#555'
-          return `
-          <tr style="border-top:1px solid #f0ebe0;background:${i % 2 === 0 ? '#fff' : '#fafafa'};">
-            <td style="padding:10px 12px;font-size:13px;color:#6d28d9;font-weight:700;">${p.numero}</td>
-            <td style="padding:10px 12px;font-size:13px;color:#1a1a1a;">${p.cliente?.nombre || '—'}</td>
-            <td style="padding:10px 12px;font-size:13px;color:#555;">${p.tipo_sofa}</td>
-            <td style="padding:10px 12px;font-size:12px;color:#555;text-transform:capitalize;">${p.estado.replace('_', ' ')}</td>
-            <td style="padding:10px 12px;font-size:13px;color:${color};font-weight:600;text-align:right;">
-              ${dias < 0 ? '⚠️ Vencido' : dias === 0 ? '🔴 Hoy' : `${dias} días`}
-            </td>
-          </tr>`
+          return `<tr style="border-top:1px solid #f0ebe0;">
+            <td style="padding:9px 6px;font-size:13px;font-weight:700;">${esc(p.numero)}</td>
+            <td style="padding:9px 6px;font-size:13px;">${esc(p.cliente?.nombre || '—')}<br><span style="color:#888;font-size:12px;">${esc(p.tipo_sofa)}</span></td>
+            <td style="padding:9px 6px;font-size:13px;color:${color};font-weight:600;text-align:right;">${dias < 0 ? '⚠️ Vencido' : dias === 0 ? '🔴 Hoy' : `${dias} días`}</td></tr>`
         }).join('')}
-      </table>` : ''}
+      </table>` : ''
 
-      <div style="background:#f9f6f0;border-left:3px solid #C9A84C;padding:16px 20px;border-radius:0 6px 6px 0;">
-        <p style="margin:0;color:#555;font-size:13px;">
-          Ver sistema completo: <a href="https://mrchester-produccion.vercel.app" style="color:#6d28d9;font-weight:600;">mrchester-produccion.vercel.app</a>
-        </p>
-      </div>
-    </td>
-  </tr>
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f1eb;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1eb;padding:30px 14px;"><tr><td align="center">
+<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
+  <tr><td style="background:#1a1a1a;padding:26px 30px 20px;text-align:center;border-radius:8px 8px 0 0;">
+    <h1 style="margin:0;color:#C9A84C;font-size:24px;font-weight:700;letter-spacing:4px;font-family:Georgia,serif;">MR. CHESTER</h1>
+  </td></tr>
+  <tr><td style="background:#C9A84C;padding:10px 30px;text-align:center;">
+    <p style="margin:0;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-weight:700;">🛒 HOY TOCA COMPRAR · ${fechaTexto(hoy).toUpperCase()}</p>
+  </td></tr>
+  <tr><td style="background:#fff;padding:30px;">${bloqueCompras}${bloquePedidos}</td></tr>
+  <tr><td style="background:#111;padding:16px 30px;text-align:center;border-radius:0 0 8px 8px;">
+    <p style="margin:0;color:#888;font-size:11px;">Resumen automático · ERP Mr. Chester</p>
+  </td></tr>
+</table></td></tr></table></body></html>`
 
-  <tr>
-    <td style="background:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
-      <p style="margin:0;color:#C9A84C;font-size:10px;letter-spacing:2px;">MR. CHESTER EXPORT S.A.S.</p>
-      <p style="margin:4px 0 0;color:#444;font-size:11px;">Resumen automático diario · Sistema ERP · ${fecha}</p>
-    </td>
-  </tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>`
-
+  const asunto = deHoy.length
+    ? `🛒 Hoy toca comprar: ${deHoy.map(p => p.nombre).join(', ')} · ${pesos(totalHoy)}`
+    : `📋 Resumen del ${fechaTexto(hoy)} · sin compras programadas`
   try {
-    await resend.emails.send({
-      from: 'Mr. Chester ERP <onboarding@resend.dev>',
-      to: ['josephtoledo@gmail.com'],
-      subject: `📋 Orden de compra del día — ${fecha} · Mr. Chester`,
-      html,
-    })
-    res.status(200).json({ ok: true, alertas: alertas.length, pedidos: pedidos?.length || 0, total: totalGeneral })
-  } catch (error) {
-    console.error('Error enviando resumen:', error)
-    res.status(500).json({ ok: false, error: error.message })
+    const { error } = await resend.emails.send({ from: FROM, to: ['josephtoledo@gmail.com'], subject: asunto, html })
+    if (error) throw new Error(error.message || String(error))
+    res.status(200).json({ ok: true, proveedores: deHoy.length, total: totalHoy })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
   }
 }
