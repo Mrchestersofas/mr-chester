@@ -43,6 +43,35 @@ export default function NuevoPedido() {
     supabase.from('materiales').select('*').eq('unidad', 'metro').order('nombre').then(({ data }) => setTelas(data || []))
   }, [])
 
+  // Convertir una cotización en pedido: /pedidos/nuevo?cotizacion=ID llena el formulario
+  const [desdeCot, setDesdeCot] = useState(null)
+  useEffect(() => {
+    const id = router.query.cotizacion
+    if (!id || !productos.length || !telas.length || desdeCot) return
+    supabase.from('cotizaciones').select('*').eq('id', id).single().then(({ data: c }) => {
+      if (!c) return
+      setDesdeCot(c)
+      const items = c.items || []
+      const primero = items[0] || {}
+      const p = productos.find(x => x.referencia === primero.referencia)
+      const t = telas.find(x => x.nombre === primero.tela)
+      const lista = items.length > 1
+        ? '\nProductos: ' + items.map(it => `${it.referencia}${it.tela ? ' (' + it.tela + ')' : ''}${it.cantidad > 1 ? ' x' + it.cantidad : ''}`).join(', ')
+        : ''
+      setForm(f => ({
+        ...f,
+        cliente_id: c.cliente_id || '',
+        crear_cliente: false,
+        categoria: p ? p.categoria : '',
+        referencia_id: p ? p.id : '',
+        tela_id: t ? t.id : '',
+        cantidad: items.length === 1 ? primero.cantidad || 1 : 1,
+        precio_venta: String(c.total || ''),
+        observaciones: [`Desde cotización ${c.numero}.${lista}`, primero.detalle, c.observaciones].filter(Boolean).join('\n'),
+      }))
+    })
+  }, [router.query.cotizacion, productos, telas])
+
   function set(f, v) { setForm(p => ({ ...p, [f]: v })) }
 
   const [errores, setErrores] = useState([])
@@ -164,7 +193,10 @@ export default function NuevoPedido() {
       setGuardando(false); window.scrollTo(0, 0); return
     }
 
-    await anotar(pedido.id, `Pedido ${pedido.numero} creado`)
+    await anotar(pedido.id, `Pedido ${pedido.numero} creado${desdeCot ? ` desde la cotización ${desdeCot.numero}` : ''}`)
+    if (desdeCot) {
+      await supabase.from('cotizaciones').update({ estado: 'convertida', pedido_id: pedido.id }).eq('id', desdeCot.id)
+    }
 
     const correo = await enviarCorreo(pedido, cliente)
     await anotar(pedido.id,
@@ -240,6 +272,12 @@ export default function NuevoPedido() {
   return (
     <div className='p-4 max-w-2xl mx-auto'>
       <h1 className='text-xl font-medium mb-5'>Nuevo pedido</h1>
+      {desdeCot && (
+        <div className='mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800'>
+          Llenado desde la cotización <b>{desdeCot.numero}</b> ({pesos(desdeCot.total)}). Revisa la referencia y la tela, y completa la <b>fecha de entrega</b> y el <b>abono</b>.
+          {(desdeCot.items || []).length > 1 && <> La cotización tiene varios productos: quedaron listados en Observaciones.</>}
+        </div>
+      )}
       {errores.length > 0 && (
         <div className='mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700' role='alert'>
           <b>Revisa esto antes de guardar:</b>
