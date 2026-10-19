@@ -431,6 +431,10 @@ export default function NuevoPedido() {
 }
 /* ---------- Confirmación para el cliente: texto y comprobante ---------- */
 
+const URL_SEGUIMIENTO = 'https://seguimiento.mrchester.com.co'
+// QR de URL_SEGUIMIENTO (29×29), generado una vez para no depender de librerías
+const QR_SEGUIMIENTO = ["11111110111001010011101111111", "10000010101011001000101000001", "10111010010110010010001011101", "10111010110110100100101011101", "10111010010010111001001011101", "10000010011001000001101000001", "11111110101010101010101111111", "00000000110010010100000000000", "10110111000001001110001001011", "01101000110011101011111110001", "11001011111111000110101000110", "01111000100000010010111100001", "11010010110110100101000101100", "11101100001110110111101000111", "01011110100111000101110110111", "00100001100100111001100110010", "01010110000110110011110111010", "01001000101110110010100101110", "10000011110101111000011110100", "00111001001011111100010000100", "01010011000101111111111111100", "00000000110110001011100011111", "11111110111000101111101011010", "10000010101111111010100011001", "10111010010110010100111110100", "10111010111001011110010111001", "10111010111100101100100100101", "10000010000110101010100101010", "11111110101110110001110101010"]
+
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const pesos = n => '$' + Number(n || 0).toLocaleString('es-CO')
 function fechaLarga(iso) {
@@ -463,7 +467,7 @@ function textoWhatsApp(pedido, cliente) {
   }
   lineas.push(
     `━━━━━━━━━━━━━━`,
-    `🔎 Sigue tu sofá aquí con tu cédula: ${typeof window !== 'undefined' ? window.location.origin : ''}/seguimiento`,
+    `🔎 Sigue tu sofá con tu cédula: ${URL_SEGUIMIENTO}`,
     `📍 Centro de Experiencia: Cra 19A #85-69, Bogotá`,
     `¡Gracias por elegirnos! Cualquier duda, escríbenos por aquí.`,
   )
@@ -480,7 +484,7 @@ function cargarImagen(src) {
 }
 
 async function dibujarComprobante(pedido, cliente) {
-  const W = 1080, H = Number(pedido.abono || 0) > 0 ? 1560 : 1400
+  const W = 1080, H = (Number(pedido.abono || 0) > 0 ? 1560 : 1400) + 250
   const ORO = '#C9A84C', NEGRO = '#1a1a1a', CREMA = '#f4f1eb', GRIS = '#6b6b6b'
   const c = document.createElement('canvas')
   c.width = W; c.height = H
@@ -568,8 +572,25 @@ async function dibujarComprobante(pedido, cliente) {
   g.fillText('Fábrica: Calle 161 #92-21, Bogotá', W / 2, H - 46)
 
   // Fecha de emisión
-  g.fillStyle = GRIS; g.font = `22px ${sans}`
-  g.fillText(`Emitido el ${fechaLarga(new Date().toISOString())}`, W / 2, y0 + ch + 55)
+  g.textAlign = 'center'; g.fillStyle = GRIS; g.font = `22px ${sans}`
+  g.fillText(`Emitido el ${fechaLarga(new Date().toISOString())}`, W / 2, y0 + ch + 50)
+
+  // QR de seguimiento
+  const qy = y0 + ch + 80, qh = 210
+  g.fillStyle = '#ffffff'
+  g.beginPath(); g.roundRect ? g.roundRect(x0, qy, cw, qh, 20) : g.rect(x0, qy, cw, qh); g.fill()
+  const n = QR_SEGUIMIENTO.length, mod = 6, qs = n * mod, qx = x0 + 30, qyy = qy + (qh - qs) / 2
+  g.fillStyle = NEGRO
+  QR_SEGUIMIENTO.forEach((fila, r) => { for (let k = 0; k < fila.length; k++) if (fila[k] === '1') g.fillRect(qx + k * mod, qyy + r * mod, mod, mod) })
+  const tx = qx + qs + 40
+  g.textAlign = 'left'
+  g.fillStyle = NEGRO; g.font = `bold 36px ${serif}`
+  g.fillText('¿Cómo va tu sofá?', tx, qy + 75)
+  g.fillStyle = GRIS; g.font = `26px ${sans}`
+  g.fillText('Escanea el código y escribe tu cédula', tx, qy + 118)
+  g.fillStyle = '#8C6A1F'; g.font = `bold 26px ${sans}`
+  g.fillText('seguimiento.mrchester.com.co', tx, qy + 160)
+  g.textAlign = 'center'
 
   return new Promise((ok, mal) => c.toBlob(b => (b ? ok(b) : mal(new Error('no se generó la imagen'))), 'image/png'))
 }
