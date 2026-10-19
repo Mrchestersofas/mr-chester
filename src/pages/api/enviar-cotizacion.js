@@ -114,13 +114,50 @@ function html(c, cliente) {
 </body></html>`
 }
 
+// Correo corto de seguimiento: el mensaje escrito por Mr. Chester + resumen de la cotización
+function htmlSeguimiento(c, mensaje) {
+  const items = (c.items || []).map(it => `${esc(it.referencia)}${it.cantidad > 1 ? ' × ' + it.cantidad : ''}`).join(' · ')
+  return `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Mr. Chester</title></head>
+<body style="margin:0;padding:0;background-color:#f4f1eb;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f1eb;padding:40px 20px;">
+<tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
+  <tr><td style="background-color:#1a1a1a;padding:30px 40px 24px;text-align:center;border-radius:8px 8px 0 0;">
+    <h1 style="margin:0;color:#C9A84C;font-size:28px;font-weight:700;letter-spacing:6px;font-family:Georgia,serif;">MR. CHESTER</h1>
+    <p style="margin:6px 0 0;color:#C9A84C;font-size:11px;letter-spacing:4px;font-family:Arial,sans-serif;">SOFÁS QUE HABLAN DE TI.</p>
+  </td></tr>
+  <tr><td style="background-color:#ffffff;padding:40px;">
+    <p style="margin:0 0 28px;color:#1a1a1a;font-size:16px;line-height:1.8;font-family:Arial,sans-serif;">${esc(mensaje).replace(/\n/g, '<br>')}</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9f6f0;border-left:3px solid #C9A84C;margin-bottom:28px;">
+      <tr><td style="padding:16px 20px;font-family:Arial,sans-serif;">
+        <p style="margin:0 0 4px;color:#888;font-size:11px;letter-spacing:2px;font-weight:700;">TU COTIZACIÓN ${esc(c.numero)}</p>
+        <p style="margin:0 0 4px;color:#1a1a1a;font-size:14px;">${items}</p>
+        <p style="margin:0;color:#1a1a1a;font-size:14px;">Total: <strong>${pesos(c.total)}</strong> · válida hasta el ${fecha(venceEl(c))}</p>
+      </td></tr>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0"><tr><td style="text-align:center;">
+      <a href="https://wa.me/573202774320?text=${encodeURIComponent(`Hola, sobre la cotización ${c.numero}`)}" style="display:inline-block;background:#C9A84C;color:#1a1a1a;text-decoration:none;font-family:Arial,sans-serif;font-weight:700;font-size:14px;letter-spacing:1px;padding:14px 28px;border-radius:6px;">RESPONDER POR WHATSAPP</a>
+    </td></tr></table>
+  </td></tr>
+  <tr><td style="background-color:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
+    <p style="margin:0;color:#888;font-size:11px;font-family:Arial,sans-serif;">Centro de Experiencia: Cra 19A #85-69, Bogotá · WhatsApp 320 277 4320</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
-  const { cotizacion, cliente } = req.body || {}
+  const { cotizacion, cliente, seguimiento } = req.body || {}
   if (!cotizacion?.numero) return res.status(200).json({ ok: false, error: 'Sin datos' })
 
-  const cuerpo = html(cotizacion, cliente)
-  const subject = `Cotización ${cotizacion.numero} — Mr. Chester Sofás`
+  const cuerpo = seguimiento ? htmlSeguimiento(cotizacion, seguimiento) : html(cotizacion, cliente)
+  const subject = seguimiento
+    ? `Tu cotización ${cotizacion.numero} — Mr. Chester Sofás`
+    : `Cotización ${cotizacion.numero} — Mr. Chester Sofás`
 
   async function enviar(to, subj, body) {
     try {
@@ -134,7 +171,7 @@ export default async function handler(req, res) {
     const r = await enviar(cliente.email, subject, cuerpo)
     cliente_ok = r.ok; error = r.error || null
   }
-  const nota = `<p style="font-family:Arial,sans-serif;font-size:13px;background:#fff3cd;padding:10px;margin:0;">Copia · ${esc(cliente?.nombre)} · ${cliente_ok ? '✅ enviada a ' + esc(cliente.email) : cliente?.email ? '⚠️ no se pudo enviar al cliente: ' + esc(error) : 'el cliente no tiene correo'}</p>`
+  const nota = `<p style="font-family:Arial,sans-serif;font-size:13px;background:#fff3cd;padding:10px;margin:0;">${seguimiento ? 'Seguimiento' : 'Copia'} · ${esc(cliente?.nombre)} · ${cliente_ok ? '✅ enviada a ' + esc(cliente.email) : cliente?.email ? '⚠️ no se pudo enviar al cliente: ' + esc(error) : 'el cliente no tiene correo'}</p>`
   const copia = await enviar(COPIA, `[Copia] ${subject}`, nota + cuerpo)
 
   res.status(200).json({ ok: cliente_ok || !cliente?.email, cliente_ok, copia_ok: copia.ok, error })
