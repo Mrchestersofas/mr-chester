@@ -1,233 +1,318 @@
-// Archivo: src/pages/api/enviar-confirmacion.js
-import { Resend } from 'resend'
+import { useEffect, useState } from 'react'
+import { supabase, Pedido, OrderStatus } from '@/lib/supabase'
+import { EstadoBadge, PrioridadBadge } from '@/components/Badges'
+import Link from 'next/link'
+import { Plus, Search, Trash2, MessageSquarePlus } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const ESTADOS: { value: string; label: string }[] = [
+  { value: '',               label: 'Todos los estados' },
+  { value: 'pendiente',      label: 'Pendiente' },
+  { value: 'estructura',     label: 'Estructura' },
+  { value: 'tapizado',       label: 'Tapizado' },
+  { value: 'costura',        label: 'Costura' },
+  { value: 'control_calidad',label: 'Control calidad' },
+  { value: 'listo',          label: 'Listo' },
+  { value: 'entregado',      label: 'Entregado' },
+]
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end()
+function semaforo(fechaEntrega: string, estado: string) {
+  if (estado === 'entregado') return null
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const entrega = new Date(fechaEntrega); entrega.setHours(0, 0, 0, 0)
+  const dias = Math.ceil((entrega.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+  if (dias < 0) return { color: '#ef4444', titulo: `Vencido hace ${Math.abs(dias)} día(s)` }
+  if (dias <= 3) return { color: '#f59e0b', titulo: `Vence en ${dias} día(s)` }
+  return { color: '#22c55e', titulo: `${dias} día(s) restantes` }
+}
 
-  const { pedido, cliente } = req.body
+export default function Pedidos() {
+  const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [eliminando, setEliminando] = useState<string | null>(null)
+  const [confirmar, setConfirmar] = useState<Pedido | null>(null)
+  const [novedadesDe, setNovedadesDe] = useState<Pedido | null>(null)
 
-  if (!pedido) {
-    return res.status(200).json({ ok: false, motivo: 'Sin datos' })
+  async function cargar() {
+    setLoading(true)
+    let q = supabase
+      .from('pedidos')
+      .select('*, cliente:clientes(*)')
+      .order('fecha_entrega', { ascending: true })
+    if (filtroEstado) q = q.eq('estado', filtroEstado)
+    const { data } = await q
+    setPedidos(data || [])
+    setLoading(false)
   }
 
-  const fechaFormateada = new Date(pedido.fecha_entrega + 'T00:00:00')
-    .toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+  useEffect(() => { cargar() }, [filtroEstado])
 
-  const precioFormateado = Number(pedido.precio_venta).toLocaleString('es-CO', {
-    style: 'currency', currency: 'COP', minimumFractionDigits: 0
-  })
+  const filtrados = pedidos.filter(p =>
+    p.numero.toLowerCase().includes(busqueda.toLowerCase()) ||
+    p.tipo_sofa.toLowerCase().includes(busqueda.toLowerCase()) ||
+    (p.cliente as any)?.nombre?.toLowerCase().includes(busqueda.toLowerCase())
+  )
 
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Confirmación de Pedido - Mr. Chester</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f1eb;font-family:Georgia,serif;">
+  async function cambiarEstado(id: string, nuevoEstado: OrderStatus) {
+    await supabase.from('pedidos').update({ estado: nuevoEstado }).eq('id', id)
+    cargar()
+  }
 
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f1eb;padding:40px 20px;">
-<tr><td align="center">
-<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
-
-  <tr>
-    <td style="background-color:#1a1a1a;padding:40px 40px 30px;text-align:center;border-radius:8px 8px 0 0;">
-      <div style="margin-bottom:8px;">
-        <svg width="60" height="45" viewBox="0 0 100 75" xmlns="http://www.w3.org/2000/svg">
-          <path d="M10,60 L10,30 L30,50 L50,10 L70,50 L90,30 L90,60 Z" fill="none" stroke="#C9A84C" stroke-width="3" stroke-linejoin="round"/>
-          <circle cx="10" cy="30" r="5" fill="#C9A84C"/>
-          <circle cx="50" cy="10" r="5" fill="#C9A84C"/>
-          <circle cx="90" cy="30" r="5" fill="#C9A84C"/>
-          <rect x="10" y="60" width="80" height="6" rx="3" fill="#C9A84C"/>
-          <rect x="20" y="68" width="60" height="4" rx="2" fill="#C9A84C"/>
-        </svg>
-      </div>
-      <h1 style="margin:0;color:#C9A84C;font-size:32px;font-weight:700;letter-spacing:6px;font-family:Georgia,serif;">MR. CHESTER</h1>
-      <p style="margin:6px 0 0;color:#C9A84C;font-size:11px;letter-spacing:4px;font-family:Arial,sans-serif;">SOFÁS QUE HABLAN DE TI.</p>
-      <div style="width:60px;height:1px;background:#C9A84C;margin:16px auto 0;"></div>
-    </td>
-  </tr>
-
-  <tr>
-    <td style="background-color:#C9A84C;padding:12px 40px;text-align:center;">
-      <p style="margin:0;color:#1a1a1a;font-size:12px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;">CONFIRMACIÓN DE PEDIDO</p>
-    </td>
-  </tr>
-
-  <tr>
-    <td style="background-color:#ffffff;padding:50px 40px 40px;">
-
-      <p style="margin:0 0 6px;color:#888;font-size:13px;font-family:Arial,sans-serif;">Estimado/a,</p>
-      <h2 style="margin:0 0 20px;color:#1a1a1a;font-size:22px;font-family:Georgia,serif;font-weight:normal;">Su pedido ha sido recibido con éxito.</h2>
-      <p style="color:#555;font-size:14px;line-height:1.8;margin:0 0 32px;font-family:Arial,sans-serif;">
-        Gracias por confiar en <strong>Mr. Chester</strong>. A continuación encontrará el resumen de su orden.
-      </p>
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
-        <tr>
-          <td style="background-color:#1a1a1a;border-left:4px solid #C9A84C;padding:20px 24px;border-radius:4px;text-align:center;">
-            <p style="margin:0;color:#C9A84C;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;">NÚMERO DE PEDIDO</p>
-            <p style="margin:8px 0 0;color:#ffffff;font-size:36px;font-weight:700;font-family:Georgia,serif;letter-spacing:2px;">${pedido.numero}</p>
-          </td>
-        </tr>
-      </table>
-
-      <p style="margin:0 0 12px;color:#1a1a1a;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;border-bottom:1px solid #C9A84C;padding-bottom:8px;">DETALLE DE LA ORDEN</p>
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;width:45%;">Cliente</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;font-weight:600;">${cliente?.nombre || '—'}</td>
-        </tr>
-        ${cliente?.cedula ? `
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Cédula</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.cedula}</td>
-        </tr>` : ''}
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Producto</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.tipo_sofa}</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Material / Color</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.material}</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Cantidad</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.cantidad} unidad(es)</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Fecha estimada de entrega</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;font-weight:600;">${fechaFormateada}</td>
-        </tr>
-        ${pedido.observaciones ? `
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Observaciones</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.observaciones}</td>
-        </tr>` : ''}
-        ${cliente?.direccion ? `
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Dirección de entrega</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.direccion}${cliente.ciudad ? ', ' + cliente.ciudad : ''}</td>
-        </tr>` : ''}
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Valor total</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:22px;color:#C9A84C;font-family:Georgia,serif;font-weight:700;">${precioFormateado}</td>
-        </tr>
-        ${pedido.abono ? `
-        <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Abono recibido</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#2d6a4f;font-family:Arial,sans-serif;font-weight:600;">$${Number(pedido.abono).toLocaleString('es-CO')}${pedido.medio_pago ? ' · ' + pedido.medio_pago.replace('_', ' ') : ''}</td>
-        </tr>
-        <tr>
-          <td style="padding:16px 0 0;font-size:13px;color:#888;font-family:Arial,sans-serif;font-weight:700;">Saldo pendiente</td>
-          <td style="padding:16px 0 0;font-size:18px;color:#c0392b;font-family:Georgia,serif;font-weight:700;">$${(Number(pedido.precio_venta) - Number(pedido.abono)).toLocaleString('es-CO')}</td>
-        </tr>` : `
-        <tr>
-          <td style="padding:16px 0 0;font-size:13px;color:#888;font-family:Arial,sans-serif;font-weight:700;">Saldo pendiente</td>
-          <td style="padding:16px 0 0;font-size:18px;color:#c0392b;font-family:Georgia,serif;font-weight:700;">${precioFormateado}</td>
-        </tr>`}
-      </table>
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9f6f0;border-left:3px solid #C9A84C;padding:20px 24px;margin-bottom:32px;border-radius:0 4px 4px 0;">
-        <tr>
-          <td>
-            <p style="margin:0 0 10px;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-family:Arial,sans-serif;font-weight:700;">📦 INFORMACIÓN IMPORTANTE DE ENTREGA</p>
-            <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• La producción inicia tras confirmar el pago del anticipo.</p>
-            <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• El valor del envío <strong>no está incluido</strong> en el precio, salvo indicación expresa.</p>
-            <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Pedidos fuera de Bogotá: hasta <strong>7 días hábiles</strong> adicionales por transportadora.</p>
-            <p style="margin:0;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Verifique previamente que el producto pueda ingresar al inmueble.</p>
-          </td>
-        </tr>
-      </table>
-
-      <p style="margin:0 0 12px;color:#1a1a1a;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;border-bottom:1px solid #C9A84C;padding-bottom:8px;">TÉRMINOS Y CONDICIONES</p>
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">1. Todos nuestros productos son fabricados bajo pedido y conforme a las especificaciones aprobadas.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">2. No se aceptan cambios en diseño, medidas, color o tela una vez iniciada la producción.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">3. El saldo total debe estar cancelado antes del despacho.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">4. Pueden existir variaciones de hasta ±3 cm en medidas finales por ser fabricación artesanal.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">5. Garantía de <strong>5 años</strong> sobre estructura y defectos de fabricación.</td></tr>
-        <tr><td style="padding:4px 0;font-size:12px;color:#777;font-family:Arial,sans-serif;line-height:1.7;">6. Por ser producto personalizado, no aplica retracto ni devoluciones por cambio de preferencia.</td></tr>
-      </table>
-
-    </td>
-  </tr>
-
-  <tr>
-    <td style="background-color:#1a1a1a;padding:32px 40px;">
-      <p style="margin:0 0 20px;color:#C9A84C;font-size:11px;letter-spacing:3px;font-family:Arial,sans-serif;font-weight:700;text-align:center;">CONTÁCTENOS</p>
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          <td style="text-align:center;padding:0 10px;">
-            <p style="margin:0 0 4px;color:#C9A84C;font-size:18px;">📱</p>
-            <p style="margin:0 0 4px;color:#ffffff;font-size:12px;font-family:Arial,sans-serif;font-weight:600;">WhatsApp Pedidos</p>
-            <p style="margin:0;color:#aaa;font-size:12px;font-family:Arial,sans-serif;">320 277 4320</p>
-          </td>
-          <td style="text-align:center;padding:0 10px;border-left:1px solid #333;border-right:1px solid #333;">
-            <p style="margin:0 0 4px;color:#C9A84C;font-size:18px;">📍</p>
-            <p style="margin:0 0 4px;color:#ffffff;font-size:12px;font-family:Arial,sans-serif;font-weight:600;">Centro de Experiencia</p>
-            <p style="margin:0;color:#aaa;font-size:12px;font-family:Arial,sans-serif;">Cra 19A #85-69, Bogotá</p>
-          </td>
-          <td style="text-align:center;padding:0 10px;">
-            <p style="margin:0 0 4px;color:#C9A84C;font-size:18px;">📸</p>
-            <p style="margin:0 0 4px;color:#ffffff;font-size:12px;font-family:Arial,sans-serif;font-weight:600;">Instagram</p>
-            <p style="margin:0;color:#aaa;font-size:12px;font-family:Arial,sans-serif;">@mrchestersofas</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-
-  <tr>
-    <td style="background-color:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
-      <p style="margin:0 0 4px;color:#C9A84C;font-size:11px;letter-spacing:2px;font-family:Arial,sans-serif;">MR. CHESTER EXPORT S.A.S.</p>
-      <p style="margin:0 0 4px;color:#555;font-size:11px;font-family:Arial,sans-serif;">Fábrica: Calle 161 #92-21, Bogotá · Centro de Experiencia: Cra 19A #85-69, Bogotá</p>
-      <p style="margin:8px 0 0;color:#444;font-size:11px;font-family:Arial,sans-serif;">Este es un correo automático de confirmación. Por favor no responda a este mensaje.</p>
-    </td>
-  </tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>`
-
-  // Remitente: dominio propio verificado en Resend. Mientras no esté verificado,
-  // Resend solo permite enviar desde onboarding@resend.dev a la cuenta dueña (copia interna).
-  const FROM_DOMINIO = process.env.RESEND_FROM || 'Mr. Chester Sofás <pedidos@envios.mrchester.com.co>'
-  const FROM_PRUEBA = 'Mr. Chester Sofás <onboarding@resend.dev>'
-  const COPIA = 'josephtoledo@gmail.com'
-  const subject = `Confirmación de pedido ${pedido.numero} — Mr. Chester Sofás`
-
-  async function enviar(to, from) {
+  async function eliminarPedido(p: Pedido) {
+    setEliminando(p.id)
     try {
-      const { data, error } = await resend.emails.send({ from, to: [to], subject, html })
-      if (error) return { ok: false, error: error.message || String(error) }
-      return { ok: true, id: data?.id }
+      await supabase.from('programacion_produccion').delete().eq('pedido_id', p.id)
     } catch (e) {
-      return { ok: false, error: e.message }
+      // ignorar si no hay programación
     }
+    try {
+      await supabase.from('pedidos').delete().eq('id', p.id)
+    } catch (e) {
+      console.error('Error eliminando pedido:', e)
+    }
+    setEliminando(null)
+    setConfirmar(null)
+    cargar()
   }
 
-  let cliente_ok = false
-  let error = null
-  if (cliente?.email) {
-    const r = await enviar(cliente.email, FROM_DOMINIO)
-    cliente_ok = r.ok
-    if (!r.ok) {
-      error = /domain|verify|not verified/i.test(r.error || '')
-        ? 'El dominio de envío todavía no está verificado en Resend.'
-        : r.error
-    }
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+
+      {novedadesDe && <ModalNovedades pedido={novedadesDe} onClose={() => setNovedadesDe(null)} />}
+
+      {confirmar && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setConfirmar(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-100 rounded-full p-2">
+                <Trash2 size={18} className="text-red-600" />
+              </div>
+              <h3 className="font-semibold text-gray-800">¿Eliminar pedido?</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-1">
+              Vas a eliminar el pedido <b className="text-purple-700">{confirmar.numero}</b> — {confirmar.tipo_sofa}
+            </p>
+            <p className="text-xs text-gray-400 mb-6">
+              Esto también borrará su programación de producción. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmar(null)} className="btn flex-1">
+                Cancelar
+              </button>
+              <button
+                onClick={() => eliminarPedido(confirmar)}
+                disabled={eliminando === confirmar.id}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {eliminando === confirmar.id ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-medium">Pedidos</h1>
+        <Link href="/pedidos/nuevo" className="btn btn-primary">
+          <Plus size={15} /> Nuevo pedido
+        </Link>
+      </div>
+
+      <div className="flex gap-3 mb-5">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar por número, producto o cliente..."
+            className="pl-9"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+          />
+        </div>
+        <select
+          value={filtroEstado}
+          onChange={e => setFiltroEstado(e.target.value)}
+          className="w-48"
+        >
+          {ESTADOS.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
+        </select>
+      </div>
+
+      <div className="card p-0 overflow-hidden">
+        {loading ? (
+          <p className="p-6 text-sm text-gray-400 text-center">Cargando...</p>
+        ) : filtrados.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-sm text-gray-400 mb-3">No hay pedidos con ese criterio.</p>
+            <Link href="/pedidos/nuevo" className="btn btn-primary">
+              <Plus size={14} /> Crear primer pedido
+            </Link>
+          </div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Producto</th>
+                <th>Material / Color</th>
+                <th>Fecha pedido</th>
+                <th>Entrega</th>
+                <th>Prioridad</th>
+                <th>Estado</th>
+                <th>Precio</th>
+                <th>Avanzar etapa</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map(p => {
+                const s = semaforo(p.fecha_entrega, p.estado)
+                return (
+                  <tr key={p.id}>
+                    <td><span className="font-medium text-purple-700">{p.numero}</span></td>
+                    <td>{(p.cliente as any)?.nombre || '—'}</td>
+                    <td>{p.tipo_sofa}</td>
+                    <td className="text-gray-500">{p.material} / {p.color}</td>
+                    <td className="text-sm text-gray-500">
+                      {(p as any).fecha_pedido ? format(parseISO((p as any).fecha_pedido), 'dd/MM/yyyy') : '—'}
+                    </td>
+                    <td className="text-sm">
+                      <div className="flex items-center gap-1.5">
+                        {s && (
+                          <span
+                            title={s.titulo}
+                            style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, display: 'inline-block', flexShrink: 0 }}
+                          />
+                        )}
+                        {format(parseISO(p.fecha_entrega), 'dd/MM/yyyy')}
+                      </div>
+                    </td>
+                    <td><PrioridadBadge prioridad={p.prioridad} /></td>
+                    <td><EstadoBadge estado={p.estado} /></td>
+                    <td className="font-medium">${Number(p.precio_venta).toLocaleString('es-CO')}</td>
+                    <td>
+                      {p.estado !== 'entregado' && (
+                        <select
+                          className="text-xs py-1 w-36"
+                          value={p.estado}
+                          onChange={e => cambiarEstado(p.id, e.target.value as OrderStatus)}
+                        >
+                          {ESTADOS.filter(e => e.value).map(e =>
+                            <option key={e.value} value={e.value}>{e.label}</option>
+                          )}
+                        </select>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <button
+                        onClick={() => setNovedadesDe(p)}
+                        className="text-gray-400 hover:text-purple-600 transition-colors p-1 rounded mr-1"
+                        title="Novedades para el cliente"
+                      >
+                        <MessageSquarePlus size={15} />
+                      </button>
+                      <button
+                        onClick={() => setConfirmar(p)}
+                        className="text-gray-300 hover:text-red-500 transition-colors p-1 rounded"
+                        title="Eliminar pedido"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <p className="text-xs text-gray-400 mt-3">{filtrados.length} pedidos</p>
+    </div>
+  )
+}
+
+/* Novedades que el cliente ve en /seguimiento */
+function ModalNovedades({ pedido, onClose }: { pedido: Pedido, onClose: () => void }) {
+  const [lista, setLista] = useState<any[]>([])
+  const [texto, setTexto] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [copiado, setCopiado] = useState(false)
+
+  async function cargar() {
+    const { data, error: e } = await supabase.from('pedido_novedades').select('*').eq('pedido_id', pedido.id).order('created_at', { ascending: false })
+    if (e) setError('No se pudieron cargar las novedades.')
+    setLista(data || [])
+  }
+  useEffect(() => { cargar() }, [])
+
+  async function agregar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!texto.trim()) return
+    setGuardando(true); setError(null)
+    const { error: err } = await supabase.from('pedido_novedades').insert({ pedido_id: pedido.id, texto: texto.trim(), origen: 'manual' })
+    setGuardando(false)
+    if (err) { setError('No se pudo guardar: ' + err.message); return }
+    setTexto(''); cargar()
+  }
+  async function alternar(n: any) {
+    await supabase.from('pedido_novedades').update({ visible_cliente: !n.visible_cliente }).eq('id', n.id)
+    cargar()
+  }
+  const link = 'https://seguimiento.mrchester.com.co'
+  const cliente: any = (pedido as any).cliente
+  const tel = String(cliente?.telefono || '').replace(/\D/g, '')
+  const telWa = tel.length === 10 ? '57' + tel : tel
+  const msg = `Hola ${String(cliente?.nombre || '').split(' ')[0]}, puedes ver cómo va tu sofá ${pedido.numero} aquí: ${link} (solo escribe tu número de cédula).`
+  async function copiarLink() {
+    try { await navigator.clipboard.writeText(link); setCopiado(true); setTimeout(() => setCopiado(false), 2000) } catch (e) {}
   }
 
-  // Copia interna: intenta con el dominio y, si no está listo, con el remitente de prueba
-  let copia = await enviar(COPIA, FROM_DOMINIO)
-  if (!copia.ok) copia = await enviar(COPIA, FROM_PRUEBA)
-
-  if (error) console.error('Correo al cliente falló:', error)
-  res.status(200).json({ ok: cliente_ok || !cliente?.email, cliente_ok, copia_ok: copia.ok, error })
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start gap-3">
+          <div>
+            <h3 className="font-semibold text-gray-800">Novedades · {pedido.numero}</h3>
+            <p className="text-xs text-gray-500">{cliente?.nombre} · {pedido.tipo_sofa}. El cliente las ve en el seguimiento con su cédula.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={agregar} className="space-y-2">
+          <textarea rows={2} value={texto} onChange={e => setTexto(e.target.value)} placeholder="Ej: Ya llegó tu tela, empezamos el tapizado esta semana." />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button className="btn btn-primary w-full justify-center" disabled={guardando}>{guardando ? 'Guardando…' : 'Publicar novedad'}</button>
+        </form>
+        <div className="space-y-2">
+          {lista.length === 0 && <p className="text-sm text-gray-400">Todavía no hay novedades. Las de cambio de etapa y de fecha salen solas.</p>}
+          {lista.map(n => (
+            <div key={n.id} className={`rounded-lg border p-3 text-sm ${n.visible_cliente ? 'border-gray-100' : 'border-dashed border-gray-200 opacity-60'}`}>
+              <div>{n.texto}</div>
+              <div className="flex justify-between items-center mt-1 text-xs text-gray-400">
+                <span>{new Date(n.created_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {n.origen === 'auto' ? 'automática' : 'manual'}</span>
+                <button onClick={() => alternar(n)} className="underline">{n.visible_cliente ? 'Ocultar al cliente' : 'Mostrar al cliente'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          <p className="text-xs text-gray-500">Link de seguimiento para el cliente:</p>
+          <div className="flex gap-2">
+            <button onClick={copiarLink} className="btn flex-1 justify-center">{copiado ? '✓ Copiado' : 'Copiar link'}</button>
+            {tel && <a className="btn flex-1 justify-center" href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
