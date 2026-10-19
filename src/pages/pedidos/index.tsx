@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, Pedido, OrderStatus } from '@/lib/supabase'
 import { EstadoBadge, PrioridadBadge } from '@/components/Badges'
 import Link from 'next/link'
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { Plus, Search, Trash2, MessageSquarePlus } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 
 const ESTADOS: { value: string; label: string }[] = [
@@ -33,6 +33,7 @@ export default function Pedidos() {
   const [filtroEstado, setFiltroEstado] = useState('')
   const [eliminando, setEliminando] = useState<string | null>(null)
   const [confirmar, setConfirmar] = useState<Pedido | null>(null)
+  const [novedadesDe, setNovedadesDe] = useState<Pedido | null>(null)
 
   async function cargar() {
     setLoading(true)
@@ -78,6 +79,8 @@ export default function Pedidos() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+
+      {novedadesDe && <ModalNovedades pedido={novedadesDe} onClose={() => setNovedadesDe(null)} />}
 
       {confirmar && (
         <div
@@ -210,7 +213,14 @@ export default function Pedidos() {
                         </select>
                       )}
                     </td>
-                    <td>
+                    <td className="whitespace-nowrap">
+                      <button
+                        onClick={() => setNovedadesDe(p)}
+                        className="text-gray-400 hover:text-purple-600 transition-colors p-1 rounded mr-1"
+                        title="Novedades para el cliente"
+                      >
+                        <MessageSquarePlus size={15} />
+                      </button>
                       <button
                         onClick={() => setConfirmar(p)}
                         className="text-gray-300 hover:text-red-500 transition-colors p-1 rounded"
@@ -227,6 +237,82 @@ export default function Pedidos() {
         )}
       </div>
       <p className="text-xs text-gray-400 mt-3">{filtrados.length} pedidos</p>
+    </div>
+  )
+}
+
+/* Novedades que el cliente ve en /seguimiento */
+function ModalNovedades({ pedido, onClose }: { pedido: Pedido, onClose: () => void }) {
+  const [lista, setLista] = useState<any[]>([])
+  const [texto, setTexto] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [copiado, setCopiado] = useState(false)
+
+  async function cargar() {
+    const { data, error: e } = await supabase.from('pedido_novedades').select('*').eq('pedido_id', pedido.id).order('created_at', { ascending: false })
+    if (e) setError('No se pudieron cargar las novedades.')
+    setLista(data || [])
+  }
+  useEffect(() => { cargar() }, [])
+
+  async function agregar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!texto.trim()) return
+    setGuardando(true); setError(null)
+    const { error: err } = await supabase.from('pedido_novedades').insert({ pedido_id: pedido.id, texto: texto.trim(), origen: 'manual' })
+    setGuardando(false)
+    if (err) { setError('No se pudo guardar: ' + err.message); return }
+    setTexto(''); cargar()
+  }
+  async function alternar(n: any) {
+    await supabase.from('pedido_novedades').update({ visible_cliente: !n.visible_cliente }).eq('id', n.id)
+    cargar()
+  }
+  const link = typeof window !== 'undefined' ? `${window.location.origin}/seguimiento` : '/seguimiento'
+  const cliente: any = (pedido as any).cliente
+  const tel = String(cliente?.telefono || '').replace(/\D/g, '')
+  const telWa = tel.length === 10 ? '57' + tel : tel
+  const msg = `Hola ${String(cliente?.nombre || '').split(' ')[0]}, puedes ver cómo va tu sofá ${pedido.numero} aquí: ${link} (solo escribe tu número de cédula).`
+  async function copiarLink() {
+    try { await navigator.clipboard.writeText(link); setCopiado(true); setTimeout(() => setCopiado(false), 2000) } catch (e) {}
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start gap-3">
+          <div>
+            <h3 className="font-semibold text-gray-800">Novedades · {pedido.numero}</h3>
+            <p className="text-xs text-gray-500">{cliente?.nombre} · {pedido.tipo_sofa}. El cliente las ve en el seguimiento con su cédula.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={agregar} className="space-y-2">
+          <textarea rows={2} value={texto} onChange={e => setTexto(e.target.value)} placeholder="Ej: Ya llegó tu tela, empezamos el tapizado esta semana." />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button className="btn btn-primary w-full justify-center" disabled={guardando}>{guardando ? 'Guardando…' : 'Publicar novedad'}</button>
+        </form>
+        <div className="space-y-2">
+          {lista.length === 0 && <p className="text-sm text-gray-400">Todavía no hay novedades. Las de cambio de etapa y de fecha salen solas.</p>}
+          {lista.map(n => (
+            <div key={n.id} className={`rounded-lg border p-3 text-sm ${n.visible_cliente ? 'border-gray-100' : 'border-dashed border-gray-200 opacity-60'}`}>
+              <div>{n.texto}</div>
+              <div className="flex justify-between items-center mt-1 text-xs text-gray-400">
+                <span>{new Date(n.created_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {n.origen === 'auto' ? 'automática' : 'manual'}</span>
+                <button onClick={() => alternar(n)} className="underline">{n.visible_cliente ? 'Ocultar al cliente' : 'Mostrar al cliente'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          <p className="text-xs text-gray-500">Link de seguimiento para el cliente:</p>
+          <div className="flex gap-2">
+            <button onClick={copiarLink} className="btn flex-1 justify-center">{copiado ? '✓ Copiado' : 'Copiar link'}</button>
+            {tel && <a className="btn flex-1 justify-center" href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
