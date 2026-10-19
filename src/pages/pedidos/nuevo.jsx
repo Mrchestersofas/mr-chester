@@ -463,6 +463,7 @@ function textoWhatsApp(pedido, cliente) {
   }
   lineas.push(
     `━━━━━━━━━━━━━━`,
+    `🔎 Sigue tu sofá aquí con tu cédula: ${typeof window !== 'undefined' ? window.location.origin : ''}/seguimiento`,
     `📍 Centro de Experiencia: Cra 19A #85-69, Bogotá`,
     `¡Gracias por elegirnos! Cualquier duda, escríbenos por aquí.`,
   )
