@@ -18,7 +18,7 @@ export default function Cotizaciones() {
   const [lista, setLista] = useState([])
 
   function cargarLista() {
-    supabase.from('cotizaciones').select('*, cliente:clientes(*)').order('created_at', { ascending: false }).limit(100)
+    supabase.from('cotizaciones').select('*, cliente:clientes(*), seguimientos:cotizacion_seguimientos(*)').order('created_at', { ascending: false }).limit(100)
       .then(({ data }) => setLista(data || []))
   }
   useEffect(() => {
@@ -325,16 +325,18 @@ function estadoReal(c) {
 function Lista({ lista, recargar }) {
   const [abierta, setAbierta] = useState(null)
   const [filtro, setFiltro] = useState('abiertas')
-  const visibles = lista.filter(c => filtro === 'todas' || ['enviada', 'aceptada', 'vencida'].includes(estadoReal(c)))
+  useEffect(() => { if (lista.some(tocaSeguimiento)) setFiltro('seguir') }, [lista.length])
+  const porSeguir = lista.filter(tocaSeguimiento)
+  const visibles = lista.filter(c => filtro === 'todas' ? true : filtro === 'seguir' ? tocaSeguimiento(c) : ['enviada', 'aceptada', 'vencida'].includes(estadoReal(c)))
   if (!lista.length) return <p className='text-gray-500 text-center py-10'>Todavía no hay cotizaciones.</p>
   return (
     <div className='space-y-3'>
-      <div className='flex gap-2 text-sm'>
-        {[['abiertas', 'Pendientes'], ['todas', 'Todas']].map(([k, l]) => (
+      <div className='flex gap-2 text-sm flex-wrap'>
+        {[['seguir', `Toca seguimiento (${porSeguir.length})`], ['abiertas', 'Pendientes'], ['todas', 'Todas']].map(([k, l]) => (
           <button key={k} className={`px-3 py-1 rounded-full border ${filtro === k ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300'}`} onClick={() => setFiltro(k)}>{l}</button>
         ))}
       </div>
-      {visibles.length === 0 && <p className='text-gray-500 text-center py-6'>No hay cotizaciones pendientes.</p>}
+      {visibles.length === 0 && <p className='text-gray-500 text-center py-6'>{filtro === 'seguir' ? '¡Al día! No hay seguimientos pendientes.' : 'No hay cotizaciones pendientes.'}</p>}
       {visibles.map(c => (
         <Fila key={c.id} c={c} abierta={abierta === c.id} toggle={() => setAbierta(abierta === c.id ? null : c.id)} recargar={recargar} />
       ))}
@@ -362,6 +364,12 @@ function Fila({ c, abierta, toggle, recargar }) {
             <div className='font-semibold'>{c.numero} · {c.cliente?.nombre || 'Sin cliente'}</div>
             <div className='text-sm text-gray-600 truncate'>{resumen}</div>
             <div className='text-xs text-gray-500 mt-0.5'>{fechaCorta(c.created_at)} · vence {fechaCorta(venceEl(c))}</div>
+            <div className='text-xs mt-0.5'>
+              {(c.seguimientos || []).length
+                ? <span className='text-gray-500'>Último seguimiento: {haceDias(ultimoContacto(c))} ({(c.seguimientos || []).length})</span>
+                : <span className='text-gray-500'>Sin seguimientos</span>}
+              {tocaSeguimiento(c) && <span className='ml-2 inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold'>Toca seguimiento</span>}
+            </div>
           </div>
           <div className='text-right flex-none'>
             <div className='font-semibold'>{pesos(c.total)}</div>
@@ -388,6 +396,8 @@ function Fila({ c, abierta, toggle, recargar }) {
             <button className='btn w-full' disabled={correo?.enviando} onClick={async () => { setCorreo({ enviando: true }); setCorreo(await enviarCorreo(c, c.cliente)) }}>Reenviar por correo</button>
           )}
           <EstadoCorreo correo={correo} cliente={c.cliente} />
+          {!['convertida', 'rechazada'].includes(est) && <Seguimiento c={c} recargar={recargar} />}
+          {(c.seguimientos || []).length > 0 && <Historial c={c} />}
           {est !== 'convertida' && (
             <div className='flex gap-2 pt-1'>
               {est !== 'aceptada' && <button className='btn flex-1 text-sm' onClick={() => cambiarEstado('aceptada')}>Aceptó</button>}
@@ -401,13 +411,118 @@ function Fila({ c, abierta, toggle, recargar }) {
   )
 }
 
+/* ---------------- Seguimiento de cotizaciones ---------------- */
+
+const DIAS_ENTRE_SEGUIMIENTOS = 2
+
+function ultimoContacto(c) {
+  const fechas = [(c.created_at), ...(c.seguimientos || []).map(s => s.created_at)].map(f => new Date(f).getTime())
+  return new Date(Math.max(...fechas))
+}
+function tocaSeguimiento(c) {
+  if (!['enviada', 'vencida'].includes(estadoReal(c))) return false
+  return (Date.now() - ultimoContacto(c).getTime()) / 86400000 >= DIAS_ENTRE_SEGUIMIENTOS
+}
+function haceDias(fecha) {
+  const d = Math.floor((new Date(hoyBogota()) - new Date(hoyBogota(new Date(fecha)))) / 86400000)
+  return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : `hace ${d} días`
+}
+
+function plantillas(c) {
+  const n = primerNombre(c.cliente?.nombre)
+  const ref = (c.items || [])[0]?.referencia || 'tu sofá'
+  return [
+    { k: 'pendientes', t: 'Estamos pendientes',
+      m: `Hola ${n}, ¿cómo estás? Te escribimos de Mr. Chester 👑. Queremos estar pendientes de ti: ¿qué has pensado de la cotización ${c.numero} del ${ref}? Si tienes alguna duda sobre telas, medidas o tiempos de entrega, con gusto te ayudamos.` },
+    { k: 'visita', t: 'Invitar a ver telas',
+      m: `Hola ${n}, ¿cómo vas? Si quieres ver y tocar las telas antes de decidir, te esperamos en nuestro Centro de Experiencia (Cra 19A #85-69, Bogotá). Cuéntanos qué día te queda bien y te atendemos personalmente. Cotización ${c.numero}.` },
+    { k: 'vence', t: 'Antes de que venza',
+      m: `Hola ${n}, te recordamos que tu cotización ${c.numero} es válida hasta el ${fechaLarga(venceEl(c))}. Si la confirmas antes, te mantenemos el precio y separamos tu fecha de fabricación. ¿Te ayudamos a cerrarla?` },
+    { k: 'libre', t: 'Mensaje propio', m: `Hola ${n}, ` },
+  ]
+}
+
+function Seguimiento({ c, recargar }) {
+  const ops = plantillas(c)
+  const [elegida, setElegida] = useState(ops[0].k)
+  const [texto, setTexto] = useState(ops[0].m)
+  const [estado, setEstado] = useState(null)
+  const tel = (c.cliente?.telefono || '').replace(/\D/g, '')
+  const telWa = tel.length === 10 ? '57' + tel : tel
+
+  function elegir(k) { setElegida(k); setTexto(ops.find(o => o.k === k).m) }
+
+  async function registrar(canal) {
+    const { error } = await supabase.from('cotizacion_seguimientos').insert({ cotizacion_id: c.id, canal, mensaje: texto.trim() })
+    if (error) { setEstado({ error: 'No quedó registrado: ' + error.message }); return false }
+    recargar()
+    return true
+  }
+
+  async function porWhatsApp() {
+    window.open(`https://wa.me/${telWa}?text=${encodeURIComponent(texto.trim())}`, '_blank')
+    if (await registrar('whatsapp')) setEstado({ ok: 'Seguimiento por WhatsApp registrado.' })
+  }
+
+  async function porCorreo() {
+    setEstado({ enviando: true })
+    const r = await enviarCorreo(c, c.cliente, texto.trim())
+    if (!r.cliente_ok) { setEstado({ error: 'No se pudo enviar el correo: ' + (r.error || 'sin detalle') }); return }
+    if (await registrar('correo')) setEstado({ ok: `Seguimiento enviado a ${c.cliente.email} y registrado.` })
+  }
+
+  return (
+    <div className='rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2 mt-2'>
+      <div className='font-semibold text-sm'>💬 Hacer seguimiento</div>
+      <div className='flex flex-wrap gap-1.5'>
+        {ops.map(o => (
+          <button key={o.k} type='button' onClick={() => elegir(o.k)}
+            className={`text-xs px-2.5 py-1 rounded-full border ${elegida === o.k ? 'bg-gray-900 text-white border-gray-900' : 'bg-white border-gray-300'}`}>{o.t}</button>
+        ))}
+      </div>
+      <textarea rows={5} value={texto} onChange={e => setTexto(e.target.value)} aria-label='Mensaje de seguimiento' />
+      <div className='flex gap-2'>
+        {tel && <button className='btn btn-primary flex-1' onClick={porWhatsApp} disabled={!texto.trim()}>Enviar por WhatsApp</button>}
+        {c.cliente?.email && <button className='btn flex-1' onClick={porCorreo} disabled={!texto.trim() || estado?.enviando}>{estado?.enviando ? 'Enviando…' : 'Enviar por correo'}</button>}
+      </div>
+      {!tel && !c.cliente?.email && <p className='text-sm text-gray-600'>El cliente no tiene WhatsApp ni correo. Agrégalos en Clientes.</p>}
+      {estado?.ok && <p className='text-sm text-green-700'>✓ {estado.ok}</p>}
+      {estado?.error && <p className='text-sm text-red-700'>{estado.error}</p>}
+    </div>
+  )
+}
+
+function Historial({ c }) {
+  const lista = [...(c.seguimientos || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  return (
+    <div className='mt-2'>
+      <div className='font-semibold text-sm mb-1'>Historial de seguimientos</div>
+      <ul className='space-y-1.5'>
+        {lista.map(s => (
+          <li key={s.id} className='text-sm rounded-lg bg-gray-50 p-2'>
+            <div className='text-xs text-gray-500'>{s.canal === 'correo' ? '✉️ Correo' : '🟢 WhatsApp'} · {fechaHora(s.created_at)}</div>
+            <div className='line-clamp-2'>{s.mensaje}</div>
+          </li>
+        ))}
+        <li className='text-xs text-gray-500 px-2'>📄 Cotización enviada · {fechaHora(c.created_at)}</li>
+      </ul>
+    </div>
+  )
+}
+
+function fechaHora(iso) {
+  const d = new Date(new Date(iso).getTime() - 5 * 3600 * 1000)
+  const h = d.getUTCHours(), m = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${d.getUTCDate()} ${MESES[d.getUTCMonth()].slice(0, 3)} ${d.getUTCFullYear()}, ${h % 12 || 12}:${m} ${h < 12 ? 'a. m.' : 'p. m.'}`
+}
+
 /* ---------------- Utilidades: correo, texto e imagen ---------------- */
 
-async function enviarCorreo(cotizacion, cliente) {
+async function enviarCorreo(cotizacion, cliente, seguimiento) {
   try {
     const r = await fetch('/api/enviar-cotizacion', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cotizacion, cliente }),
+      body: JSON.stringify({ cotizacion, cliente, seguimiento }),
     })
     return await r.json().catch(() => ({ ok: false, error: 'Respuesta inválida' }))
   } catch (e) {
