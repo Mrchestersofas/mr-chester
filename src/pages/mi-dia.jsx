@@ -508,6 +508,7 @@ function VistaMenu({ menu, mercado, setMercado, setHoja, ejecutar }) {
             </div>
             <div className='flex flex-col gap-2 mb-4'>
               <a className='btn btn-primary justify-center' href={`https://wa.me/?text=${encodeURIComponent(textoMercado(t, mercado))}`} target='_blank' rel='noreferrer'>Enviar lista de {t} por WhatsApp ({pend})</a>
+              <BotonCopiar items={items} className='btn justify-center' />
               <div className='flex gap-2'>
                 <button className='btn flex-1 justify-center' onClick={() => setHoja({ tipo: 'item', item: { lista: t } })}>+ Producto</button>
                 <button className='btn flex-1 justify-center' onClick={nuevaSemana}>{confirmar ? 'Toca otra vez para confirmar' : 'Nueva semana (desmarcar)'}</button>
@@ -535,6 +536,34 @@ function VistaMenu({ menu, mercado, setMercado, setHoja, ejecutar }) {
         {!tiendas.length && <Vacio>No hay listas todavía. Agrega el primer producto.</Vacio>}
       </Seccion>
     </>
+  )
+}
+
+/* Copia la lista de productos pendientes, uno por línea, para buscarlos en la app de la tienda */
+function BotonCopiar({ items, className, style }) {
+  const [estado, setEstado] = useState(null)
+  const texto = items.filter(m => !m.comprado).map(m => m.item.replace(/\s*\(.*?\)\s*/g, ' ').trim() + (m.cantidad && !/si falta/i.test(m.cantidad) ? ` — ${m.cantidad}` : '')).join('\n')
+  async function copiar() {
+    if (!texto) { setEstado('vacio'); return }
+    try {
+      await navigator.clipboard.writeText(texto)
+      setEstado('ok')
+    } catch (e) {
+      const ta = document.createElement('textarea')
+      ta.value = texto; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, texto.length)
+      let ok = false
+      try { ok = document.execCommand('copy') } catch (_) {}
+      document.body.removeChild(ta)
+      setEstado(ok ? 'ok' : 'error')
+    }
+    setTimeout(() => setEstado(null), 2500)
+  }
+  const n = items.filter(m => !m.comprado).length
+  return (
+    <button type='button' onClick={copiar} className={className} style={style}>
+      {estado === 'ok' ? '✓ Copiada. Pégala en Rappi o D1' : estado === 'vacio' ? 'No hay nada pendiente' : estado === 'error' ? 'No se pudo copiar' : `📋 Copiar lista (${n})`}
+    </button>
   )
 }
 
