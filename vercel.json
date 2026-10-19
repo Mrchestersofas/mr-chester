@@ -3,6 +3,10 @@
     {
       "path": "/api/resumen-diario",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/resumen-finanzas",
+      "schedule": "0 14 * * *"
     }
   ]
 }
