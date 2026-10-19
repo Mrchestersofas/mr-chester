@@ -263,6 +263,7 @@ function Mercado({ mercado, marcar }) {
           )
         })}
       </div>
+      <BotonCopiar items={items} className='w-full mb-3 py-3 rounded-xl font-semibold border' style={{ borderColor: '#e2ddd4', background: '#fff' }} />
       <p className='text-sm text-gray-600 mb-3'>Toca el círculo cuando ya lo compraste o si ya hay en la casa.</p>
       {secciones.map(sec => (
         <div key={sec} className='mb-4'>
@@ -301,6 +302,34 @@ function Avisar({ pedido, nombre, wa, cerrar }) {
         <button onClick={cerrar} className='w-full py-3 rounded-xl border border-gray-200 font-semibold text-gray-600'>No es urgente, cerrar</button>
       </div>
     </div>
+  )
+}
+
+/* Copia la lista de productos pendientes, uno por línea, para buscarlos en la app de la tienda */
+function BotonCopiar({ items, className, style }) {
+  const [estado, setEstado] = useState(null)
+  const texto = items.filter(m => !m.comprado).map(m => m.item.replace(/\s*\(.*?\)\s*/g, ' ').trim() + (m.cantidad && !/si falta/i.test(m.cantidad) ? ` — ${m.cantidad}` : '')).join('\n')
+  async function copiar() {
+    if (!texto) { setEstado('vacio'); return }
+    try {
+      await navigator.clipboard.writeText(texto)
+      setEstado('ok')
+    } catch (e) {
+      const ta = document.createElement('textarea')
+      ta.value = texto; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, texto.length)
+      let ok = false
+      try { ok = document.execCommand('copy') } catch (_) {}
+      document.body.removeChild(ta)
+      setEstado(ok ? 'ok' : 'error')
+    }
+    setTimeout(() => setEstado(null), 2500)
+  }
+  const n = items.filter(m => !m.comprado).length
+  return (
+    <button type='button' onClick={copiar} className={className} style={style}>
+      {estado === 'ok' ? '✓ Copiada. Pégala en Rappi o D1' : estado === 'vacio' ? 'No hay nada pendiente' : estado === 'error' ? 'No se pudo copiar' : `📋 Copiar lista (${n})`}
+    </button>
   )
 }
 
