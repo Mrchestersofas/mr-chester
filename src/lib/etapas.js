@@ -40,5 +40,34 @@ export function normalizar(f) {
     dia: f.dia_produccion, inicios,
     numero: p.numero, ref: p.tipo_sofa, tela: p.material, cantidad: p.cantidad, entrega: p.fecha_entrega,
     prioridad: p.prioridad, obs: p.observaciones, cliente: p.cliente?.nombre || null, estado: p.estado,
+    metros: p.metros != null ? Number(p.metros) : null,
   }
+}
+
+// ---------- Programación semanal para el jefe de producción (WhatsApp) ----------
+export const WHATSAPP_JEFE = '573133533882' // Luis
+export const URL_TALLER = 'https://mrchester-produccion.vercel.app/taller'
+
+/** Texto de WhatsApp con los sofás que se fabrican de lunes a sábado de la semana que empieza en `lunes`. */
+export function textoSemana(items, lunes) {
+  const dias = [0, 1, 2, 3, 4, 5].map(k => sumar(lunes, k))
+  const lineas = [`📅 *PROGRAMACIÓN MR. CHESTER*`, `Semana del ${fCorta(dias[0])} al ${fCorta(dias[5])}`, ``]
+  let total = 0
+  dias.forEach(d => {
+    const del = items.filter(it => it.dia === d).sort((a, b) => String(a.numero).localeCompare(String(b.numero)))
+    if (!del.length) return
+    lineas.push(`*${fCorta(d).replace(/^./, c => c.toUpperCase())}*`)
+    del.forEach(it => {
+      total += Number(it.cantidad) || 1
+      lineas.push(`• ${it.numero} · ${it.ref}${it.cantidad > 1 ? ` ×${it.cantidad}` : ''} · ${it.tela || 'tela por definir'} · entrega ${fCorta(it.entrega)}${it.prioridad === 'urgente' ? ' · ⚠️ URGENTE' : ''}`)
+    })
+    lineas.push(``)
+  })
+  if (!total) lineas.push(`No hay nada programado esta semana.`, ``)
+  else lineas.push(`Total: *${total} unidad${total === 1 ? '' : 'es'}*`)
+  lineas.push(`Ver detalle: ${URL_TALLER}`)
+  return lineas.join('\n')
+}
+export function linkSemanaJefe(items, lunes) {
+  return `https://wa.me/${WHATSAPP_JEFE}?text=${encodeURIComponent(textoSemana(items, lunes))}`
 }
