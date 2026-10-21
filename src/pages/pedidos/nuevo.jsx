@@ -31,6 +31,7 @@ export default function NuevoPedido() {
     nuevo_email: '',
     abono: '',
     medio_pago: '',
+    enviar_correo: true,
   })
 
   const cats = [...new Set(productos.map(p => p.categoria))]
@@ -242,9 +243,11 @@ export default function NuevoPedido() {
       cantidad: lista.reduce((s, p) => s + Number(p.cantidad || 1), 0),
     }
 
-    const correo = await enviarCorreo(resumen, cliente, lista)
+    // Para pedidos viejos se puede registrar sin avisarle al cliente
+    const correo = form.enviar_correo ? await enviarCorreo(resumen, cliente, lista) : { omitido: true }
     await anotar(primero.id,
-      correo.cliente_ok ? `Correo de confirmación enviado a ${cliente.email}`
+      correo.omitido ? 'Registrado sin enviar confirmación al cliente'
+      : correo.cliente_ok ? `Correo de confirmación enviado a ${cliente.email}`
       : cliente.email ? `Correo al cliente NO enviado: ${correo.error || 'sin detalle'}`
       : 'Cliente sin correo: no se envió confirmación')
 
@@ -290,7 +293,8 @@ export default function NuevoPedido() {
             </div>
           )}
           <div className={`rounded-lg p-3 text-sm border ${correo?.enviando ? 'bg-gray-50 border-gray-200' : correo?.cliente_ok ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
-            {correo?.enviando ? 'Enviando correo…'
+            {correo?.omitido ? <>No se envió confirmación al cliente (la desmarcaste).</>
+              : correo?.enviando ? 'Enviando correo…'
               : correo?.cliente_ok ? <>✓ Correo de confirmación enviado a <b>{cliente.email}</b></>
               : !cliente?.email ? <>El cliente no tiene correo. Envíale la confirmación por WhatsApp.</>
               : <>⚠ No se pudo enviar el correo a <b>{cliente.email}</b>.<br /><span className='text-gray-600'>{correo?.error}</span></>}
@@ -308,7 +312,7 @@ export default function NuevoPedido() {
                 <img src={comprobanteUrl} alt={`Comprobante ${pedido.numero}`} className='mt-2 rounded' />
               </div>
             )}
-            {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>Reintentar correo</button>}
+            {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>{correo?.omitido ? 'Enviar confirmación ahora' : 'Reintentar correo'}</button>}
             <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
             <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
           </div>
@@ -524,6 +528,11 @@ export default function NuevoPedido() {
           <label className='text-xs text-gray-500 mb-1 block'>Observaciones</label>
           <textarea rows={3} placeholder='Instrucciones especiales, detalles de entrega, etc.' value={form.observaciones} onChange={e => set('observaciones', e.target.value)} />
         </section>
+
+        <label className='flex items-start gap-2 text-sm cursor-pointer rounded-lg bg-gray-50 p-3'>
+          <input type='checkbox' checked={form.enviar_correo} onChange={e => set('enviar_correo', e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
+          <span><b>Enviar confirmación al cliente por correo</b><br /><span className='text-xs text-gray-500'>Desmárcalo para registrar pedidos viejos sin avisarle al cliente.</span></span>
+        </label>
 
         <div className='flex gap-3 pt-2'>
           <button className='btn btn-primary flex-1' onClick={guardar} disabled={guardando}>
