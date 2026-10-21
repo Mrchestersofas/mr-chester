@@ -87,6 +87,7 @@ function Taller() {
               <VistaTaller
                 items={items}
                 secciones={secciones}
+                modo={u.rol === 'jefe' ? 'general' : u.seccion === 'corte_tela' ? 'corte' : 'secciones'}
                 puedeMover={it => !!u.puede_mover && (u.rol === 'jefe' || it.etapa === u.seccion)}
                 mover={mover}
               />
