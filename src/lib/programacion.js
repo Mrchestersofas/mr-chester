@@ -6,12 +6,11 @@ const OFFSET_COLOMBIA = -5 // UTC-5, todo el año
 
 export const ETAPAS = [
   { key: 'cola', label: 'En cola', horas: 0 },
-  { key: 'estructura', label: 'Estructura', horas: 1.5 },
+  { key: 'estructura', label: 'Esqueletería', horas: 1.5 },
   { key: 'espumado', label: 'Espumado', horas: 2 },
-  { key: 'corte_tela', label: 'Corte de tela', horas: 1.5 },
+  { key: 'corte_tela', label: 'Corte y costura', horas: 1.5 },
   { key: 'tapizado', label: 'Tapizado', horas: 2 },
   { key: 'terminado', label: 'Terminado', horas: 1 },
-  { key: 'control_calidad', label: 'Control de calidad', horas: 0.25 },
   { key: 'despacho', label: 'Despacho', horas: 0.25 },
 ]
 
