@@ -115,7 +115,7 @@ export function primerCupoLibre(usados, cupos = 1, desde = hoyColombia()) {
 export async function cargarYPlanificar(supabase, reintento = false) {
   const [{ data: filas, error }, { data: productos }, { data: sinProg }] = await Promise.all([
     supabase.from('programacion_produccion')
-      .select('*, pedido:pedidos(id, numero, grupo, tipo_sofa, material, cantidad, estado, prioridad, fecha_pedido, fecha_entrega, cliente:clientes(nombre, ciudad, telefono))'),
+      .select('*, pedido:pedidos(id, numero, grupo, tipo_sofa, material, cantidad, estado, prioridad, fecha_pedido, fecha_entrega, precio_venta, abono, cliente:clientes(nombre, ciudad, telefono))'),
     supabase.from('productos').select('referencia, categoria'),
     supabase.from('pedidos').select('id, programacion_produccion(id)').not('estado', 'in', '(entregado,cancelado)'),
   ])
