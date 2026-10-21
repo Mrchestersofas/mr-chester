@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase, Pedido, Material } from '@/lib/supabase'
+import { supabase, Pedido } from '@/lib/supabase'
 import { EstadoBadge } from '@/components/Badges'
 import Link from 'next/link'
 import { AlertTriangle, Package, ClipboardList, Wrench, DollarSign, Plus, ShoppingCart, Search, X, Phone, MapPin, User, FileText, Clock } from 'lucide-react'
@@ -277,17 +277,26 @@ function BuscadorPedido() {
 
 export default function Dashboard() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
-  const [materiales, setMateriales] = useState<Material[]>([])
+  // Compras de hoy (módulo nuevo de Compras: proveedores con días fijos)
+  const [comprasHoy, setComprasHoy] = useState<any[]>([])
+  const [pedidosCompraHoy, setPedidosCompraHoy] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [{ data: p }, { data: m }] = await Promise.all([
+      const hoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10)
+      const dia = new Date(hoy + 'T12:00:00Z').getUTCDay()
+      const [{ data: p }, { data: provs }, { data: hechos }] = await Promise.all([
         supabase.from('pedidos').select('*, cliente:clientes(*)').order('created_at', { ascending: false }).limit(10),
-        supabase.from('materiales').select('*').eq('tipo', 'stock').order('nombre'),
+        supabase.from('compra_proveedores').select('*, insumos:compra_insumos(*)').eq('activo', true).order('orden'),
+        supabase.from('compra_pedidos').select('proveedor_id, created_at').eq('fecha', hoy),
       ])
       setPedidos(p || [])
-      setMateriales(m || [])
+      setComprasHoy((provs || []).filter((x: any) => (x.dias || []).includes(dia)).map((x: any) => ({
+        ...x,
+        total: (x.insumos || []).filter((i: any) => i.activo).reduce((a: number, i: any) => a + Number(i.precio) * Number(i.cantidad), 0) + Number(x.costo_fijo || 0),
+      })))
+      setPedidosCompraHoy(hechos || [])
       setLoading(false)
     }
     load()
@@ -295,8 +304,9 @@ export default function Dashboard() {
 
   const activos    = pedidos.filter(p => !['entregado'].includes(p.estado))
   const enProd     = pedidos.filter(p => ['estructura','tapizado','costura','control_calidad'].includes(p.estado))
-  const alertas    = materiales.filter(m => m.stock_actual < m.stock_minimo)
-  const criticos   = alertas.filter(m => m.stock_actual === 0)
+  const totalComprasHoy = comprasHoy.reduce((a, x) => a + x.total, 0)
+  const pedidoHecho = (id: string) => pedidosCompraHoy.some(x => x.proveedor_id === id)
+  const porPedir = comprasHoy.filter(x => !pedidoHecho(x.id)).length
   const totalMes   = pedidos.reduce((s, p) => s + Number(p.precio_venta), 0)
   const diasRestantes = (fecha: string) => differenceInDays(parseISO(fecha), new Date())
 
@@ -306,33 +316,6 @@ export default function Dashboard() {
 
   return (
     <div className='p-6 max-w-6xl mx-auto'>
-
-      {/* BANNER ALERTA CRÍTICA */}
-      {criticos.length > 0 && (
-        <div className='flex items-center gap-3 bg-red-600 text-white rounded-xl px-5 py-4 mb-6'>
-          <AlertTriangle size={20} className='flex-shrink-0' />
-          <div className='flex-1'>
-            <p className='font-semibold text-sm'>⚠️ {criticos.length} material(es) con stock en CERO</p>
-            <p className='text-xs text-red-200 mt-0.5'>{criticos.map(m => m.nombre).join(' · ')}</p>
-          </div>
-          <Link href='/compras' className='bg-white text-red-600 text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-red-50 flex-shrink-0'>
-            Ver Compras →
-          </Link>
-        </div>
-      )}
-
-      {criticos.length === 0 && alertas.length > 0 && (
-        <div className='flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 mb-6'>
-          <AlertTriangle size={18} className='text-amber-600 flex-shrink-0' />
-          <div className='flex-1'>
-            <p className='font-semibold text-sm text-amber-800'>{alertas.length} material(es) por debajo del stock mínimo</p>
-            <p className='text-xs text-amber-600 mt-0.5'>{alertas.map(m => m.nombre).join(' · ')}</p>
-          </div>
-          <Link href='/compras' className='bg-amber-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-amber-700 flex-shrink-0'>
-            Ver Compras →
-          </Link>
-        </div>
-      )}
 
       {/* Header */}
       <div className='flex items-center justify-between mb-6'>
@@ -368,10 +351,13 @@ export default function Dashboard() {
         </div>
         <Link href='/compras' className='card hover:border-amber-300 transition-colors'>
           <div className='flex items-center gap-2 mb-2'>
-            <ShoppingCart size={15} className={alertas.length > 0 ? 'text-amber-500' : 'text-gray-400'} />
-            <span className='text-xs text-gray-400'>Alertas de stock</span>
+            <ShoppingCart size={15} className={porPedir > 0 ? 'text-amber-500' : 'text-gray-400'} />
+            <span className='text-xs text-gray-400'>Compras de hoy</span>
           </div>
-          <div className={`text-2xl font-medium ${alertas.length > 0 ? 'text-amber-600' : ''}`}>{alertas.length}</div>
+          <div className='text-2xl font-medium'>{comprasHoy.length ? `$${(totalComprasHoy / 1e6).toFixed(1)}M` : '—'}</div>
+          <div className={`text-xs mt-0.5 ${porPedir > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+            {!comprasHoy.length ? 'Sin compras hoy' : porPedir > 0 ? `${porPedir} por pedir` : '✓ Todo pedido'}
+          </div>
         </Link>
         <div className='card'>
           <div className='flex items-center gap-2 mb-2'>
@@ -405,25 +391,20 @@ export default function Dashboard() {
 
         <div className='card'>
           <div className='flex items-center justify-between mb-4'>
-            <h2 className='text-sm font-medium'>Alertas de stock</h2>
-            <Link href='/compras' className='text-xs text-purple-600 hover:underline'>Ver inventario</Link>
+            <h2 className='text-sm font-medium'>Compras de hoy</h2>
+            <Link href='/compras' className='text-xs text-purple-600 hover:underline'>Ir a Compras</Link>
           </div>
-          {alertas.length === 0 ? (
-            <div className='text-sm text-green-600 bg-green-50 rounded-lg px-4 py-3'>
-              ✓ Todo el inventario de stock está en niveles correctos.
-            </div>
+          {comprasHoy.length === 0 ? (
+            <div className='text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3'>Hoy no hay compras programadas.</div>
           ) : (
-            alertas.map(m => (
-              <div key={m.id} className={`flex items-start gap-3 rounded-lg px-3 py-2.5 mb-2 ${m.stock_actual === 0 ? 'bg-red-50' : 'bg-amber-50'}`}>
-                <AlertTriangle size={15} className={`mt-0.5 flex-shrink-0 ${m.stock_actual === 0 ? 'text-red-600' : 'text-amber-600'}`} />
+            comprasHoy.map(x => (
+              <Link key={x.id} href='/compras' className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 mb-2 ${pedidoHecho(x.id) ? 'bg-green-50' : 'bg-amber-50'}`}>
                 <div>
-                  <p className={`text-sm font-medium ${m.stock_actual === 0 ? 'text-red-800' : 'text-amber-800'}`}>{m.nombre}</p>
-                  <p className={`text-xs ${m.stock_actual === 0 ? 'text-red-600' : 'text-amber-600'}`}>
-                    Stock: {m.stock_actual} {m.unidad} — Mínimo: {m.stock_minimo} {m.unidad}
-                    {m.stock_actual === 0 && <span className='ml-1 font-bold'>¡EN CERO!</span>}
-                  </p>
+                  <p className={`text-sm font-medium ${pedidoHecho(x.id) ? 'text-green-800' : 'text-amber-800'}`}>{x.nombre}</p>
+                  <p className={`text-xs ${pedidoHecho(x.id) ? 'text-green-700' : 'text-amber-700'}`}>{pedidoHecho(x.id) ? '✓ Pedido' : 'Por pedir'}</p>
                 </div>
-              </div>
+                <span className='text-sm font-semibold'>${Math.round(x.total).toLocaleString('es-CO')}</span>
+              </Link>
             ))
           )}
 
