@@ -59,7 +59,7 @@ export default function Programacion() {
       </div>
 
       <div className='flex gap-2 mb-4'>
-        {[['pedidos', 'Pedidos'], ['calendario', 'Calendario']].map(([k, l]) => (
+        {[['pedidos', 'Pedidos'], ['calendario', 'Calendario'], ['recaudo', '💰 Recaudo']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${tab === k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{l}</button>
         ))}
       </div>
@@ -75,7 +75,8 @@ export default function Programacion() {
             </>
           )}
         </div>
-      ) : <Calendario plan={plan} usados={usados} onReprog={setReprog} />}
+      ) : tab === 'calendario' ? <Calendario plan={plan} usados={usados} onReprog={setReprog} />
+        : <Recaudo plan={plan} />}
 
       {reprog && <Reprogramar p={reprog} usados={usados} cerrar={() => setReprog(null)} listo={async () => { setReprog(null); setDatos(null); await cargar() }} />}
     </div>
@@ -224,6 +225,97 @@ function Reprogramar({ p, usados, cerrar, listo }) {
           })}
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ---------------- Recaudo: saldos por cobrar el día de la entrega ---------------- */
+
+const pesos = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
+
+function Recaudo({ plan }) {
+  const hoy = hoyColombia()
+  const [abierto, setAbierto] = useState(null)
+  // Se cobra el día de entrega: la fecha prometida, o la real si se pasa de la prometida
+  const cobros = plan
+    .map(p => {
+      const saldo = Number(p.pedido.precio_venta || 0) - Number(p.pedido.abono || 0)
+      const dia = !p.prometida ? p.entrega_max : p.entrega_max > p.prometida ? p.entrega_max : p.prometida
+      return { p, saldo, dia }
+    })
+    .filter(x => x.saldo > 0)
+  const atrasados = cobros.filter(x => x.dia < hoy)
+  const futuros = cobros.filter(x => x.dia >= hoy)
+  const total = cobros.reduce((s, x) => s + x.saldo, 0)
+  const enDias = n => futuros.filter(x => x.dia <= sumarDias(hoy, n)).reduce((s, x) => s + x.saldo, 0)
+
+  const porDia = {}
+  futuros.forEach(x => { (porDia[x.dia] = porDia[x.dia] || []).push(x) })
+  const dias = Object.keys(porDia).sort()
+
+  // Por semana (lunes a domingo)
+  const lunes = d => sumarDias(d, -((new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7))
+  const porSemana = {}
+  futuros.forEach(x => { const l = lunes(x.dia); porSemana[l] = (porSemana[l] || 0) + x.saldo })
+
+  if (!cobros.length) return <div className='card text-center text-gray-500 py-8'>No hay saldos pendientes por cobrar.</div>
+
+  return (
+    <div className='space-y-3'>
+      <div className='grid grid-cols-3 gap-2'>
+        <div className='card text-center py-3'><div className='text-lg font-semibold'>{pesos(enDias(7))}</div><div className='text-xs text-gray-500'>Próx. 7 días</div></div>
+        <div className='card text-center py-3'><div className='text-lg font-semibold'>{pesos(enDias(30))}</div><div className='text-xs text-gray-500'>Próx. 30 días</div></div>
+        <div className='card text-center py-3'><div className='text-lg font-semibold'>{pesos(total)}</div><div className='text-xs text-gray-500'>Total por cobrar</div></div>
+      </div>
+      <p className='text-xs text-gray-500'>Saldo = precio − abono. Se cobra el día de entrega: la fecha prometida, o la real si se pasa.</p>
+
+      {atrasados.length > 0 && (
+        <div className='card border-red-300'>
+          <div className='flex justify-between font-semibold text-red-700'><span>Entrega ya pasó · por cobrar</span><span>{pesos(atrasados.reduce((s, x) => s + x.saldo, 0))}</span></div>
+          {atrasados.map(x => <FilaCobro key={x.p.id} x={x} />)}
+        </div>
+      )}
+
+      {Object.keys(porSemana).length > 1 && (
+        <div className='card'>
+          <div className='font-semibold mb-1'>Por semana</div>
+          {Object.keys(porSemana).sort().map(l => (
+            <div key={l} className='flex justify-between text-sm py-1 border-t border-gray-100 first:border-0'>
+              <span className='capitalize'>Semana del {f(l)}</span><b>{pesos(porSemana[l])}</b>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dias.map(d => {
+        const lista = porDia[d]
+        const t = lista.reduce((s, x) => s + x.saldo, 0)
+        return (
+          <div key={d} className='card p-0 overflow-hidden'>
+            <button className='w-full p-3 flex justify-between items-center gap-2 text-left' onClick={() => setAbierto(abierto === d ? null : d)} aria-expanded={abierto === d}>
+              <div>
+                <div className='font-semibold capitalize'>{d === hoy ? 'Hoy · ' : ''}{f(d)}</div>
+                <div className='text-xs text-gray-500'>{lista.length} entrega{lista.length > 1 ? 's' : ''}</div>
+              </div>
+              <div className='text-lg font-semibold text-green-700'>{pesos(t)}</div>
+            </button>
+            {abierto === d && <div className='border-t border-gray-100 px-3 pb-2'>{lista.map(x => <FilaCobro key={x.p.id} x={x} />)}</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function FilaCobro({ x }) {
+  const { p, saldo } = x
+  return (
+    <div className='flex justify-between gap-2 text-sm py-2 border-t border-gray-100 first:border-0'>
+      <div className='min-w-0'>
+        <div className='font-medium'>{p.pedido.numero} · {p.pedido.cliente?.nombre || 'Sin cliente'}</div>
+        <div className='text-xs text-gray-500'>{p.pedido.tipo_sofa} · total {pesos(p.pedido.precio_venta)} · abonó {pesos(p.pedido.abono)}</div>
+      </div>
+      <b className='whitespace-nowrap'>{pesos(saldo)}</b>
     </div>
   )
 }
