@@ -55,6 +55,10 @@ export default function Pedidos() {
     (p.cliente as any)?.nombre?.toLowerCase().includes(busqueda.toLowerCase())
   )
 
+  // Pedidos de una misma compra (varios productos) comparten "grupo" = número del primero
+  const tamGrupo: Record<string, number> = {}
+  pedidos.forEach((p: any) => { if (p.grupo) tamGrupo[p.grupo] = (tamGrupo[p.grupo] || 0) + 1 })
+
   async function cambiarEstado(id: string, nuevoEstado: OrderStatus) {
     await supabase.from('pedidos').update({ estado: nuevoEstado }).eq('id', id)
     cargar()
@@ -179,7 +183,14 @@ export default function Pedidos() {
                 const s = semaforo(p.fecha_entrega, p.estado)
                 return (
                   <tr key={p.id}>
-                    <td><span className="font-medium text-purple-700">{p.numero}</span></td>
+                    <td>
+                      <span className="font-medium text-purple-700">{p.numero}</span>
+                      {(p as any).grupo && tamGrupo[(p as any).grupo] > 1 && (
+                        <div className="text-xs text-gray-500 whitespace-nowrap">
+                          {(p as any).grupo === p.numero ? `Compra de ${tamGrupo[(p as any).grupo]} productos` : `Va con ${(p as any).grupo}`}
+                        </div>
+                      )}
+                    </td>
                     <td>{(p.cliente as any)?.nombre || '—'}</td>
                     <td>{p.tipo_sofa}</td>
                     <td className="text-gray-500">{p.material} / {p.color}</td>
