@@ -14,10 +14,9 @@ const PASOS = [
   { key: 'cola', label: 'Pedido confirmado', desc: 'Tu sofá está en la fila de producción.' },
   { key: 'estructura', label: 'Estructura', desc: 'Armamos la base en madera.' },
   { key: 'espumado', label: 'Espumado', desc: 'Ponemos las espumas y el confort.' },
-  { key: 'corte_tela', label: 'Corte de tela', desc: 'Cortamos tu tela a la medida.' },
+  { key: 'corte_tela', label: 'Corte y costura', desc: 'Cortamos y cosemos tu tela a la medida.' },
   { key: 'tapizado', label: 'Tapizado', desc: 'Forramos tu sofá a mano.' },
-  { key: 'terminado', label: 'Terminado', desc: 'Capitoné, botones y detalles.' },
-  { key: 'control_calidad', label: 'Control de calidad', desc: 'Revisamos cada detalle.' },
+  { key: 'terminado', label: 'Terminado', desc: 'Capitoné, botones, detalles y revisión final.' },
   { key: 'despacho', label: 'Listo para entrega', desc: 'Coordinamos contigo la entrega.' },
   { key: 'completado', label: 'Entregado', desc: '¡Disfrútalo!' },
 ]
@@ -100,7 +99,7 @@ Seguimiento.sinLayout = true
 export default Seguimiento
 
 function Pedido({ p }) {
-  const idx = Math.max(0, PASOS.findIndex(s => s.key === p.etapa))
+  const idx = Math.max(0, PASOS.findIndex(s => s.key === (p.etapa === 'control_calidad' ? 'terminado' : p.etapa)))
   const actual = PASOS[idx]
   const pct = Math.round(idx / (PASOS.length - 1) * 100)
   const entregado = p.etapa === 'completado'
