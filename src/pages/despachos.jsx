@@ -255,27 +255,31 @@ function Despachar({ x, elegidos, total, pagado, alDespachar, por, setPor, tel }
 /* ---------- Orden de entrega para el transportador (WhatsApp, antes de despachar) ---------- */
 
 function Transportador({ x, elegidos, saldo, por, setPor, tel, setTel }) {
-  const [conocidos, setConocidos] = useState([])
+  const [lista, setLista] = useState([])
+  const [otro, setOtro] = useState(false)
   const [obs, setObs] = useState('')
   const [enviado, setEnviado] = useState(false)
   useEffect(() => {
-    supabase.from('remisiones').select('entregado_por, entregado_tel').not('entregado_por', 'is', null).order('created_at', { ascending: false }).limit(50)
-      .then(({ data }) => {
-        const m = {}
-        ;(data || []).forEach(r => { if (!(r.entregado_por in m)) m[r.entregado_por] = r.entregado_tel || '' })
-        setConocidos(Object.entries(m))
-      })
+    supabase.from('transportadores').select('*').eq('activo', true).order('nombre').then(({ data }) => setLista(data || []))
   }, [])
+
+  function elegir(v) {
+    if (v === '__otro') { setOtro(true); setPor(''); setTel(''); return }
+    setOtro(false)
+    const t = lista.find(l => l.id === v)
+    setPor(t ? t.nombre : ''); setTel(t ? t.whatsapp || '' : '')
+  }
+  async function guardarNuevo() {
+    if (!por.trim()) return
+    const { data } = await supabase.from('transportadores').insert({ nombre: por.trim(), whatsapp: tel.replace(/\D/g, '') || null }).select().single()
+    if (data) { setLista(l => [...l, data].sort((a, b) => a.nombre.localeCompare(b.nombre))); setOtro(false) }
+  }
+  const elegido = lista.find(l => l.nombre === por)
   const c = elegidos[0].cliente || {}
   const dir = [c.direccion, c.ciudad].filter(Boolean).join(', ')
   const t = tel.replace(/\D/g, '')
   const telWa = t.length === 10 ? '57' + t : t
 
-  function elegirNombre(v) {
-    setPor(v)
-    const k = conocidos.find(([n]) => n === v)
-    if (k && k[1] && !tel) setTel(k[1])
-  }
 
   function texto() {
     return [
@@ -301,17 +305,21 @@ function Transportador({ x, elegidos, saldo, por, setPor, tel, setTel }) {
   return (
     <div className='rounded-lg border border-blue-200 bg-blue-50/50 p-3 space-y-3'>
       <div className='font-semibold text-sm'>🚚 Enviar orden al transportador</div>
-      <div className='grid grid-cols-1 sm:grid-cols-2 gap-2'>
-        <div>
-          <label className='text-xs text-gray-500 mb-1 block'>Transportador</label>
-          <input list={'transp-' + x.g} value={por} onChange={e => elegirNombre(e.target.value)} placeholder='Ej: Carlos (camioneta)' />
-          <datalist id={'transp-' + x.g}>{conocidos.map(([n]) => <option key={n} value={n} />)}</datalist>
-        </div>
-        <div>
-          <label className='text-xs text-gray-500 mb-1 block'>WhatsApp</label>
-          <input inputMode='tel' value={tel} onChange={e => setTel(e.target.value)} placeholder='Ej: 3001234567' />
-        </div>
+      <div>
+        <label className='text-xs text-gray-500 mb-1 block'>Transportador</label>
+        <select value={otro ? '__otro' : elegido ? elegido.id : ''} onChange={e => elegir(e.target.value)}>
+          <option value=''>Seleccionar</option>
+          {lista.map(t => <option key={t.id} value={t.id}>{t.nombre}{t.whatsapp ? ` · ${t.whatsapp}` : ''}</option>)}
+          <option value='__otro'>+ Otro transportador</option>
+        </select>
       </div>
+      {otro && (
+        <div className='grid grid-cols-1 sm:grid-cols-2 gap-2'>
+          <div><label className='text-xs text-gray-500 mb-1 block'>Nombre</label><input value={por} onChange={e => setPor(e.target.value)} placeholder='Ej: Carlos (camioneta)' /></div>
+          <div><label className='text-xs text-gray-500 mb-1 block'>WhatsApp</label><input inputMode='tel' value={tel} onChange={e => setTel(e.target.value)} placeholder='Ej: 3001234567' /></div>
+          <button type='button' className='btn sm:col-span-2' onClick={guardarNuevo} disabled={!por.trim()}>Guardar en la lista</button>
+        </div>
+      )}
       <div><label className='text-xs text-gray-500 mb-1 block'>Indicaciones (opcional)</label><input value={obs} onChange={e => setObs(e.target.value)} placeholder='Ej: llamar antes, entregar después de las 2 p. m.' /></div>
       {t.length >= 10
         ? <a className='btn btn-primary w-full text-center block' href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto())}`} target='_blank' rel='noreferrer' onClick={() => setEnviado(true)}>🟢 Enviar por WhatsApp</a>
