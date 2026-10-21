@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import VistaTaller from '@/components/VistaTaller'
-import { SECCIONES, normalizar, siguiente, anterior, estadoPedido, etiqueta } from '@/lib/etapas'
+import { SECCIONES, normalizar, siguiente, anterior, estadoPedido, etiqueta, linkSemanaJefe, lunesDe, hoyISO, sumar } from '@/lib/etapas'
 
 /* Producción (ERP): Joseph / jefe de producción ven todas las secciones y mueven los pedidos.
    Etapas: Programación → Esqueletería → Espumado → Corte y costura → Tapizado → Terminado → Despacho.
@@ -43,6 +43,10 @@ export default function Produccion() {
           <p className='text-sm text-gray-500'>{items.filter(i => i.etapa !== 'cola' && i.etapa !== 'despacho').length} en fábrica · {items.filter(i => i.etapa === 'cola').length} programados · {items.filter(i => i.etapa === 'despacho').length} listos</p>
         </div>
         <Link href='/programacion' className='btn text-sm whitespace-nowrap'>📅 Programación</Link>
+      </div>
+      <div className='grid grid-cols-2 gap-2 mb-4'>
+        <a className='btn text-center text-sm' href={linkSemanaJefe(items, lunesDe(hoyISO()))} target='_blank' rel='noreferrer'>📲 Semana actual a Luis</a>
+        <a className='btn text-center text-sm' href={linkSemanaJefe(items, sumar(lunesDe(hoyISO()), 7))} target='_blank' rel='noreferrer'>📲 Próxima semana a Luis</a>
       </div>
       <VistaTaller
         items={items}
