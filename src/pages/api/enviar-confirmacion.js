@@ -6,7 +6,9 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
-  const { pedido, cliente } = req.body
+  const { pedido, cliente, items } = req.body
+  const varios = Array.isArray(items) && items.length > 1
+  const pesosCO = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
 
   if (!pedido) {
     return res.status(200).json({ ok: false, motivo: 'Sin datos' })
@@ -86,7 +88,11 @@ export default async function handler(req, res) {
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Cédula</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.cedula}</td>
         </tr>` : ''}
+        ${varios ? items.map(it => `
         <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;"><strong>${it.tipo_sofa}</strong>${Number(it.cantidad) > 1 ? ' × ' + it.cantidad : ''}<br><span style="color:#888;font-size:12px;">Tela: ${it.material} · ${it.numero}</span></td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pesosCO(it.precio_venta)}</td>
+        </tr>`).join('') : `        <tr>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Producto</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.tipo_sofa}</td>
         </tr>
@@ -98,6 +104,7 @@ export default async function handler(req, res) {
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Cantidad</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${pedido.cantidad} unidad(es)</td>
         </tr>
+`}
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Fecha estimada de entrega</td>
           <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;font-weight:600;">${fechaFormateada}</td>
