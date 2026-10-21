@@ -2,22 +2,25 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '@/lib/supabase'
 
+/* Nuevo pedido. Un pedido puede tener varios productos: el primero toma el número (MC-040)
+   y los demás quedan como MC-040-2, MC-040-3…, todos con grupo = MC-040. Cada producto entra
+   a producción por separado; al cliente le llega un solo correo y un solo comprobante. */
+
+const OTRO = '__otro'
+const itemVacio = () => ({ categoria: '', referencia_id: '', ref_otro: '', tela_id: '', tela_otra: '', cantidad: 1, precio: '' })
+
 export default function NuevoPedido() {
   const router = useRouter()
   const [clientes, setClientes] = useState([])
   const [productos, setProductos] = useState([])
   const [telas, setTelas] = useState([])
   const [guardando, setGuardando] = useState(false)
+  const [items, setItems] = useState([itemVacio()])
   const [form, setForm] = useState({
     cliente_id: '',
-    categoria: '',
-    referencia_id: '',
-    tela_id: '',
-    cantidad: 1,
-    fecha_pedido: new Date().toISOString().split('T')[0],
+    fecha_pedido: new Date(Date.now() - 5 * 3600 * 1000).toISOString().split('T')[0],
     fecha_entrega: '',
     prioridad: 'normal',
-    precio_venta: '',
     observaciones: '',
     crear_cliente: false,
     nuevo_nombre: '',
@@ -30,20 +33,19 @@ export default function NuevoPedido() {
     medio_pago: '',
   })
 
-  const prod = productos.find(p => p.id === form.referencia_id)
-  const tela = telas.find(t => t.id === form.tela_id)
   const cats = [...new Set(productos.map(p => p.categoria))]
-  const productosFiltrados = form.categoria
-    ? productos.filter(p => p.categoria === form.categoria)
-    : productos
+  const setItem = (i, cambios) => setItems(arr => arr.map((it, k) => (k === i ? { ...it, ...cambios } : it)))
+  const refDe = it => it.referencia_id === OTRO ? it.ref_otro.trim() : (productos.find(p => p.id === it.referencia_id)?.referencia || '')
+  const telaDe = it => it.tela_id === OTRO ? it.tela_otra.trim() : (telas.find(t => t.id === it.tela_id)?.nombre || '')
+  const total = items.reduce((s, it) => s + (Number(it.precio) || 0), 0)
 
   useEffect(() => {
     supabase.from('clientes').select('*').order('nombre').then(({ data }) => setClientes(data || []))
-    supabase.from('productos').select('*').order('categoria').then(({ data }) => setProductos(data || []))
+    supabase.from('productos').select('*').order('categoria').order('referencia').then(({ data }) => setProductos(data || []))
     supabase.from('materiales').select('*').eq('unidad', 'metro').order('nombre').then(({ data }) => setTelas(data || []))
   }, [])
 
-  // Convertir una cotización en pedido: /pedidos/nuevo?cotizacion=ID llena el formulario
+  // Convertir una cotización en pedido: /pedidos/nuevo?cotizacion=ID llena el formulario con TODOS sus productos
   const [desdeCot, setDesdeCot] = useState(null)
   useEffect(() => {
     const id = router.query.cotizacion
@@ -51,23 +53,29 @@ export default function NuevoPedido() {
     supabase.from('cotizaciones').select('*').eq('id', id).single().then(({ data: c }) => {
       if (!c) return
       setDesdeCot(c)
-      const items = c.items || []
-      const primero = items[0] || {}
-      const p = productos.find(x => x.referencia === primero.referencia)
-      const t = telas.find(x => x.nombre === primero.tela)
-      const lista = items.length > 1
-        ? '\nProductos: ' + items.map(it => `${it.referencia}${it.tela ? ' (' + it.tela + ')' : ''}${it.cantidad > 1 ? ' x' + it.cantidad : ''}`).join(', ')
-        : ''
+      const lineas = (c.items || []).map(it => Number(it.precio) * Number(it.cantidad || 1))
+      const bruto = lineas.reduce((s, x) => s + x, 0)
+      const desc = Number(c.descuento) || 0
+      // El descuento se reparte en proporción al valor de cada producto
+      const conDesc = lineas.map(x => Math.round(x - (bruto ? desc * x / bruto : 0)))
+      conDesc[0] += (Number(c.total) || 0) - conDesc.reduce((s, x) => s + x, 0)
+      setItems((c.items || []).map((it, k) => {
+        const p = productos.find(x => x.referencia === it.referencia)
+        const t = telas.find(x => x.nombre === it.tela)
+        return {
+          categoria: p ? p.categoria : '',
+          referencia_id: p ? p.id : OTRO, ref_otro: p ? '' : it.referencia,
+          tela_id: t ? t.id : it.tela ? OTRO : '', tela_otra: t ? '' : (it.tela || ''),
+          cantidad: it.cantidad || 1,
+          precio: String(conDesc[k] || ''),
+        }
+      }))
+      const detalles = (c.items || []).filter(it => it.detalle).map(it => `${it.referencia}: ${it.detalle}`)
       setForm(f => ({
         ...f,
         cliente_id: c.cliente_id || '',
         crear_cliente: false,
-        categoria: p ? p.categoria : '',
-        referencia_id: p ? p.id : '',
-        tela_id: t ? t.id : '',
-        cantidad: items.length === 1 ? primero.cantidad || 1 : 1,
-        precio_venta: String(c.total || ''),
-        observaciones: [`Desde cotización ${c.numero}.${lista}`, primero.detalle, c.observaciones].filter(Boolean).join('\n'),
+        observaciones: [`Desde cotización ${c.numero}.`, ...detalles, c.observaciones].filter(Boolean).join('\n'),
       }))
     })
   }, [router.query.cotizacion, productos, telas])
@@ -79,10 +87,10 @@ export default function NuevoPedido() {
   const [compartiendo, setCompartiendo] = useState(false)
   const [comprobanteUrl, setComprobanteUrl] = useState(null)
 
-  async function compartirComprobante(pedido, cliente, texto) {
+  async function compartirComprobante(pedido, cliente, lista, texto) {
     setCompartiendo(true)
     try {
-      const blob = await dibujarComprobante(pedido, cliente)
+      const blob = await dibujarComprobante(pedido, cliente, lista)
       const archivo = new File([blob], `Comprobante-${pedido.numero}.png`, { type: 'image/png' })
       if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
         try {
@@ -106,20 +114,25 @@ export default function NuevoPedido() {
       if (!form.nuevo_nombre.trim()) e.push('Escribe el nombre del cliente.')
       if (form.nuevo_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.nuevo_email.trim())) e.push('El correo del cliente no es válido.')
     } else if (!form.cliente_id) e.push('Elige un cliente o crea uno nuevo.')
-    if (!prod) e.push('Elige la referencia del sofá.')
-    if (!form.tela_id) e.push('Elige la tela.')
-    if (!form.precio_venta || isNaN(Number(form.precio_venta)) || Number(form.precio_venta) <= 0) e.push('Escribe el precio de venta (solo números).')
+    items.forEach((it, i) => {
+      const n = items.length > 1 ? ` (producto ${i + 1})` : ''
+      if (!refDe(it)) e.push(`Elige la referencia${n}.`)
+      if (!telaDe(it)) e.push(`Elige la tela${n}.`)
+      if (!(Number(it.cantidad) > 0)) e.push(`La cantidad debe ser mayor a 0${n}.`)
+      if (!(Number(it.precio) > 0)) e.push(`Escribe el precio, solo números${n}.`)
+    })
     if (!form.fecha_entrega) e.push('Elige la fecha de entrega.')
     if (form.abono && isNaN(Number(form.abono))) e.push('El abono debe ser solo números.')
+    if (Number(form.abono) > total) e.push('El abono no puede ser mayor al total.')
     return e
   }
 
-  async function enviarCorreo(pedido, cliente) {
+  async function enviarCorreo(pedido, cliente, lista) {
     try {
       const r = await fetch('/api/enviar-confirmacion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pedido, cliente }),
+        body: JSON.stringify({ pedido, cliente, items: lista }),
       })
       const j = await r.json().catch(() => ({}))
       return j
@@ -135,8 +148,8 @@ export default function NuevoPedido() {
   async function reenviar() {
     if (!resultado) return
     setResultado(r => ({ ...r, correo: { enviando: true } }))
-    const correo = await enviarCorreo(resultado.pedido, resultado.cliente)
-    await anotar(resultado.pedido.id, correo.cliente_ok ? `Correo reenviado a ${resultado.cliente.email}` : `Reenvío falló: ${correo.error || 'sin detalle'}`)
+    const correo = await enviarCorreo(resultado.pedido, resultado.cliente, resultado.lista)
+    await anotar(resultado.lista[0].id, correo.cliente_ok ? `Correo reenviado a ${resultado.cliente.email}` : `Reenvío falló: ${correo.error || 'sin detalle'}`)
     setResultado(r => ({ ...r, correo }))
   }
 
@@ -147,7 +160,6 @@ export default function NuevoPedido() {
     setGuardando(true)
 
     let cliente = null
-
     if (form.crear_cliente) {
       const { data: nc, error: errC } = await supabase.from('clientes').insert({
         nombre: form.nuevo_nombre.trim(),
@@ -171,76 +183,112 @@ export default function NuevoPedido() {
       cliente = ec
     }
 
-    const { data: pedido, error: errP } = await supabase.from('pedidos').insert({
-      numero: '',
+    // El abono se reparte entre los productos en proporción a su precio (así cada uno queda con su saldo)
+    const abonoTotal = Number(form.abono) || 0
+    const precios = items.map(it => Number(it.precio))
+    const abonos = precios.map(p => Math.round(total ? abonoTotal * p / total : 0))
+    abonos[0] += abonoTotal - abonos.reduce((s, x) => s + x, 0)
+
+    const fila = (it, k) => ({
       cliente_id: cliente?.id || null,
-      tipo_sofa: prod.referencia,
-      material: tela ? tela.nombre : '',
-      color: tela ? tela.nombre : '',
-      cantidad: Number(form.cantidad),
+      tipo_sofa: refDe(it),
+      material: telaDe(it),
+      color: telaDe(it),
+      cantidad: Number(it.cantidad),
       fecha_pedido: form.fecha_pedido,
       fecha_entrega: form.fecha_entrega,
       prioridad: form.prioridad,
       estado: 'pendiente',
-      precio_venta: Number(form.precio_venta),
+      precio_venta: precios[k],
       observaciones: form.observaciones,
-      abono: Number(form.abono) || 0,
+      abono: abonos[k],
       medio_pago: form.medio_pago,
-    }).select().single()
+    })
 
-    if (errP || !pedido) {
+    const { data: primero, error: errP } = await supabase.from('pedidos').insert({ ...fila(items[0], 0), numero: '' }).select().single()
+    if (errP || !primero) {
       setErrores(['El pedido NO se guardó: ' + (errP?.message || 'error desconocido') + '. Tus datos siguen en el formulario, intenta de nuevo.'])
       setGuardando(false); window.scrollTo(0, 0); return
     }
-
-    await anotar(pedido.id, `Pedido ${pedido.numero} creado${desdeCot ? ` desde la cotización ${desdeCot.numero}` : ''}`)
-    if (desdeCot) {
-      await supabase.from('cotizaciones').update({ estado: 'convertida', pedido_id: pedido.id }).eq('id', desdeCot.id)
+    const grupo = primero.numero
+    await supabase.from('pedidos').update({ grupo }).eq('id', primero.id)
+    const lista = [{ ...primero, grupo }]
+    const fallidos = []
+    for (let k = 1; k < items.length; k++) {
+      const { data: otro, error: errO } = await supabase.from('pedidos')
+        .insert({ ...fila(items[k], k), numero: `${grupo}-${k + 1}`, grupo }).select().single()
+      if (errO || !otro) fallidos.push(`${refDe(items[k])}: ${errO?.message || 'error'}`)
+      else lista.push(otro)
     }
 
-    const correo = await enviarCorreo(pedido, cliente)
-    await anotar(pedido.id,
+    const nombres = lista.map(p => p.numero).join(', ')
+    for (const p of lista) {
+      await anotar(p.id, `Pedido ${p.numero} creado${lista.length > 1 ? ` (compra ${grupo}: ${nombres})` : ''}${desdeCot ? ` desde la cotización ${desdeCot.numero}` : ''}`)
+    }
+    if (desdeCot) {
+      await supabase.from('cotizaciones').update({ estado: 'convertida', pedido_id: primero.id }).eq('id', desdeCot.id)
+    }
+
+    // Resumen de toda la compra, para el correo, el comprobante y WhatsApp
+    const resumen = {
+      numero: grupo,
+      fecha_entrega: form.fecha_entrega,
+      precio_venta: lista.reduce((s, p) => s + Number(p.precio_venta), 0),
+      abono: lista.reduce((s, p) => s + Number(p.abono || 0), 0),
+      medio_pago: form.medio_pago,
+      observaciones: form.observaciones,
+      tipo_sofa: lista.map(p => p.tipo_sofa).join(' + '),
+      material: [...new Set(lista.map(p => p.material))].join(' / '),
+      cantidad: lista.reduce((s, p) => s + Number(p.cantidad || 1), 0),
+    }
+
+    const correo = await enviarCorreo(resumen, cliente, lista)
+    await anotar(primero.id,
       correo.cliente_ok ? `Correo de confirmación enviado a ${cliente.email}`
       : cliente.email ? `Correo al cliente NO enviado: ${correo.error || 'sin detalle'}`
       : 'Cliente sin correo: no se envió confirmación')
 
-    {
+    for (const p of lista) {
       try {
         await fetch('/api/programar-pedido', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pedido_id: pedido.id,
-            cantidad: Number(form.cantidad),
-            fecha_entrega: form.fecha_entrega,
-            numero_pedido: pedido.numero,
-          }),
+          body: JSON.stringify({ pedido_id: p.id, cantidad: Number(p.cantidad), fecha_entrega: form.fecha_entrega, numero_pedido: p.numero }),
         })
-      } catch (e) {
-        console.error('No se pudo programar la producción:', e)
+      } catch (err) {
+        console.error('No se pudo programar la producción:', err)
       }
     }
 
     setGuardando(false)
-    setResultado({ pedido, cliente, correo })
+    setResultado({ pedido: resumen, cliente, correo, lista, fallidos })
     window.scrollTo(0, 0)
   }
 
   if (resultado) {
-    const { pedido, cliente, correo } = resultado
-    const saldo = Number(pedido.precio_venta) - Number(pedido.abono || 0)
+    const { pedido, cliente, correo, lista, fallidos } = resultado
     const tel = (cliente?.telefono || '').replace(/\D/g, '')
     const telWa = tel.length === 10 ? '57' + tel : tel
     const telVer = tel.length === 10 ? `${tel.slice(0, 3)} ${tel.slice(3, 6)} ${tel.slice(6)}` : tel
-    const msg = textoWhatsApp(pedido, cliente)
+    const msg = textoWhatsApp(pedido, cliente, lista)
     return (
       <div className='p-4 max-w-2xl mx-auto'>
         <div className='card space-y-4'>
           <div className='rounded-lg bg-green-50 border border-green-200 p-4'>
             <p className='text-sm text-green-700 font-semibold'>✓ Pedido registrado</p>
             <p className='text-3xl font-bold mt-1'>{pedido.numero}</p>
-            <p className='text-sm text-gray-600 mt-1'>{cliente?.nombre} · {pedido.tipo_sofa} · entrega {pedido.fecha_entrega}</p>
+            <p className='text-sm text-gray-600 mt-1'>{cliente?.nombre} · {pesos(pedido.precio_venta)} · entrega {fechaLarga(pedido.fecha_entrega)}</p>
+            {lista.length > 1 && (
+              <ul className='text-sm text-gray-700 mt-2 space-y-0.5'>
+                {lista.map(p => <li key={p.id}><b>{p.numero}</b> · {p.tipo_sofa}{p.cantidad > 1 ? ` × ${p.cantidad}` : ''} · {p.material}</li>)}
+              </ul>
+            )}
           </div>
+          {fallidos?.length > 0 && (
+            <div className='rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700'>
+              ⚠ Estos productos NO se guardaron, regístralos aparte: {fallidos.join(' · ')}
+            </div>
+          )}
           <div className={`rounded-lg p-3 text-sm border ${correo?.enviando ? 'bg-gray-50 border-gray-200' : correo?.cliente_ok ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
             {correo?.enviando ? 'Enviando correo…'
               : correo?.cliente_ok ? <>✓ Correo de confirmación enviado a <b>{cliente.email}</b></>
@@ -249,7 +297,7 @@ export default function NuevoPedido() {
             {correo?.copia_ok && <div className='text-gray-500 mt-1'>Copia enviada a josephtoledo@gmail.com</div>}
           </div>
           <div className='flex flex-col gap-2'>
-            <button className='btn btn-primary' onClick={() => compartirComprobante(pedido, cliente, msg)} disabled={compartiendo}>
+            <button className='btn btn-primary' onClick={() => compartirComprobante(pedido, cliente, lista, msg)} disabled={compartiendo}>
               {compartiendo ? 'Preparando comprobante…' : '📄 Compartir comprobante con logo'}
             </button>
             {tel && <a className='btn text-center' href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target='_blank' rel='noreferrer'>Enviar solo texto por WhatsApp</a>}
@@ -261,7 +309,7 @@ export default function NuevoPedido() {
               </div>
             )}
             {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>Reintentar correo</button>}
-            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setForm(f => ({ ...f, cliente_id: '', referencia_id: '', tela_id: '', precio_venta: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', cantidad: 1, fecha_entrega: '' })) }}>Registrar otro pedido</button>
+            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
             <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
           </div>
         </div>
@@ -274,8 +322,7 @@ export default function NuevoPedido() {
       <h1 className='text-xl font-medium mb-5'>Nuevo pedido</h1>
       {desdeCot && (
         <div className='mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800'>
-          Llenado desde la cotización <b>{desdeCot.numero}</b> ({pesos(desdeCot.total)}). Revisa la referencia y la tela, y completa la <b>fecha de entrega</b> y el <b>abono</b>.
-          {(desdeCot.items || []).length > 1 && <> La cotización tiene varios productos: quedaron listados en Observaciones.</>}
+          Llenado desde la cotización <b>{desdeCot.numero}</b> ({pesos(desdeCot.total)}). Revisa los productos y completa la <b>fecha de entrega</b> y el <b>abono</b>.
         </div>
       )}
       {errores.length > 0 && (
@@ -311,17 +358,17 @@ export default function NuevoPedido() {
                 </div>
                 <div>
                   <label className='text-xs text-gray-500 mb-1 block'>Cédula</label>
-                  <input placeholder='Ej: 1234567890' value={form.nuevo_cedula} onChange={e => set('nuevo_cedula', e.target.value)} />
+                  <input inputMode='numeric' placeholder='Ej: 1234567890' value={form.nuevo_cedula} onChange={e => set('nuevo_cedula', e.target.value)} />
                 </div>
               </div>
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <div>
                   <label className='text-xs text-gray-500 mb-1 block'>Teléfono / WhatsApp</label>
-                  <input placeholder='Ej: 3001234567' value={form.nuevo_tel} onChange={e => set('nuevo_tel', e.target.value)} />
+                  <input inputMode='tel' placeholder='Ej: 3001234567' value={form.nuevo_tel} onChange={e => set('nuevo_tel', e.target.value)} />
                 </div>
                 <div>
                   <label className='text-xs text-gray-500 mb-1 block'>Correo electrónico</label>
-                  <input placeholder='correo@ejemplo.com' value={form.nuevo_email} onChange={e => set('nuevo_email', e.target.value)} />
+                  <input type='email' placeholder='correo@ejemplo.com' value={form.nuevo_email} onChange={e => set('nuevo_email', e.target.value)} />
                 </div>
               </div>
               <div>
@@ -336,80 +383,94 @@ export default function NuevoPedido() {
           )}
         </section>
 
-        {/* PRODUCTO */}
+        {/* PRODUCTOS */}
         <section>
-          <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Producto</h2>
-          <div className='space-y-3'>
-            <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-              <div>
-                <label className='text-xs text-gray-500 mb-1 block'>Categoría</label>
-                <select
-                  value={form.categoria}
-                  onChange={e => { set('categoria', e.target.value); set('referencia_id', '') }}
-                >
-                  <option value=''>Todas las categorías</option>
-                  {cats.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className='text-xs text-gray-500 mb-1 block'>Referencia *</label>
-                <select value={form.referencia_id} onChange={e => set('referencia_id', e.target.value)}>
-                  <option value=''>Seleccionar referencia</option>
-                  {form.categoria ? (
-                    productosFiltrados.map(p => (
-                      <option key={p.id} value={p.id}>{p.referencia}</option>
-                    ))
-                  ) : (
-                    cats.map(cat => (
-                      <optgroup key={cat} label={cat}>
-                        {productos.filter(p => p.categoria === cat).map(p => (
-                          <option key={p.id} value={p.id}>{p.referencia}</option>
-                        ))}
-                      </optgroup>
-                    ))
+          <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Productos</h2>
+          <div className='space-y-4'>
+            {items.map((it, i) => {
+              const prod = productos.find(p => p.id === it.referencia_id)
+              const filtrados = it.categoria ? productos.filter(p => p.categoria === it.categoria) : productos
+              return (
+                <div key={i} className='rounded-lg border border-gray-200 p-3 space-y-3'>
+                  <div className='flex items-center justify-between'>
+                    <span className='text-sm font-semibold'>Producto {i + 1}</span>
+                    {items.length > 1 && <button type='button' className='text-sm text-red-600' onClick={() => setItems(a => a.filter((_, k) => k !== i))}>Quitar</button>}
+                  </div>
+                  <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                    <div>
+                      <label className='text-xs text-gray-500 mb-1 block'>Categoría</label>
+                      <select value={it.categoria} onChange={e => setItem(i, { categoria: e.target.value, referencia_id: '' })}>
+                        <option value=''>Todas las categorías</option>
+                        {cats.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className='text-xs text-gray-500 mb-1 block'>Referencia *</label>
+                      <select value={it.referencia_id} onChange={e => setItem(i, { referencia_id: e.target.value })}>
+                        <option value=''>Seleccionar referencia</option>
+                        {it.categoria
+                          ? filtrados.map(p => <option key={p.id} value={p.id}>{p.referencia}</option>)
+                          : cats.map(cat => (
+                            <optgroup key={cat} label={cat}>
+                              {productos.filter(p => p.categoria === cat).map(p => <option key={p.id} value={p.id}>{p.referencia}</option>)}
+                            </optgroup>
+                          ))}
+                        <option value={OTRO}>Otro (escribirlo)</option>
+                      </select>
+                    </div>
+                  </div>
+                  {it.referencia_id === OTRO && (
+                    <div>
+                      <label className='text-xs text-gray-500 mb-1 block'>¿Qué producto?</label>
+                      <input value={it.ref_otro} onChange={e => setItem(i, { ref_otro: e.target.value })} placeholder='Ej: Puff capitoneado 60 cm' />
+                    </div>
                   )}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className='text-xs text-gray-500 mb-1 block'>Tela *</label>
-              <select value={form.tela_id} onChange={e => set('tela_id', e.target.value)}>
-                <option value=''>Seleccionar tela</option>
-                {telas.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-              </select>
-            </div>
-            <div className='grid grid-cols-2 gap-3'>
-              <div>
-                <label className='text-xs text-gray-500 mb-1 block'>Cantidad</label>
-                <input type='number' min='1' value={form.cantidad} onChange={e => set('cantidad', e.target.value)} />
-              </div>
-              <div>
-                <label className='text-xs text-gray-500 mb-1 block'>Prioridad</label>
-                <select value={form.prioridad} onChange={e => set('prioridad', e.target.value)}>
-                  <option value='normal'>Normal</option>
-                  <option value='alta'>Alta</option>
-                  <option value='urgente'>Urgente</option>
-                </select>
-              </div>
-            </div>
+                  <div>
+                    <label className='text-xs text-gray-500 mb-1 block'>Tela *</label>
+                    <select value={it.tela_id} onChange={e => setItem(i, { tela_id: e.target.value })}>
+                      <option value=''>Seleccionar tela</option>
+                      {telas.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                      <option value={OTRO}>Otra (escribirla)</option>
+                    </select>
+                  </div>
+                  {it.tela_id === OTRO && (
+                    <div>
+                      <label className='text-xs text-gray-500 mb-1 block'>¿Qué tela?</label>
+                      <input value={it.tela_otra} onChange={e => setItem(i, { tela_otra: e.target.value })} placeholder='Ej: Terciopelo verde esmeralda' />
+                    </div>
+                  )}
+                  <div className='grid grid-cols-2 gap-3'>
+                    <div>
+                      <label className='text-xs text-gray-500 mb-1 block'>Cantidad</label>
+                      <input type='number' min='1' inputMode='numeric' value={it.cantidad} onChange={e => setItem(i, { cantidad: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className='text-xs text-gray-500 mb-1 block'>Precio total COP *</label>
+                      <input inputMode='numeric' placeholder='Ej: 2065000' value={it.precio} onChange={e => setItem(i, { precio: e.target.value.replace(/\D/g, '') })} />
+                    </div>
+                  </div>
+                  {Number(it.cantidad) > 1 && <p className='text-xs text-gray-500 -mt-1'>El precio es el total de las {it.cantidad} unidades.</p>}
+                  {prod && (
+                    <div className='bg-purple-50 rounded-lg p-3 text-sm grid grid-cols-3 gap-2'>
+                      <div><span className='text-gray-500 text-xs block'>Metros tela</span><b>{prod.metros_tela}m</b></div>
+                      <div><span className='text-gray-500 text-xs block'>Precio público</span><b>${prod.valor_publico?.toLocaleString('es-CO')}</b></div>
+                      <div><span className='text-gray-500 text-xs block'>Precio oferta</span><b>${prod.valor_oferta?.toLocaleString('es-CO')}</b></div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <button type='button' className='btn w-full' onClick={() => setItems(a => [...a, itemVacio()])}>+ Agregar otro producto</button>
+            {items.length > 1 && (
+              <div className='rounded-lg bg-gray-50 p-3 flex justify-between font-semibold'><span>Total del pedido</span><span>{pesos(total)}</span></div>
+            )}
           </div>
-          {prod && (
-            <div className='mt-3 bg-purple-50 rounded-lg p-3 text-sm grid grid-cols-3 gap-2'>
-              <div><span className='text-gray-500 text-xs block'>Metros tela</span><b>{prod.metros_tela}m</b></div>
-              <div><span className='text-gray-500 text-xs block'>Precio público</span><b>${prod.valor_publico?.toLocaleString('es-CO')}</b></div>
-              <div><span className='text-gray-500 text-xs block'>Precio oferta</span><b>${prod.valor_oferta?.toLocaleString('es-CO')}</b></div>
-            </div>
-          )}
         </section>
 
-        {/* PRECIO Y FECHA */}
+        {/* FECHAS */}
         <section>
-          <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Precio y fecha</h2>
-          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-            <div>
-              <label className='text-xs text-gray-500 mb-1 block'>Precio venta COP *</label>
-              <input placeholder='Ej: 2065000' value={form.precio_venta} onChange={e => set('precio_venta', e.target.value)} />
-            </div>
+          <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Fechas</h2>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Fecha del pedido *</label>
               <input type='date' value={form.fecha_pedido} onChange={e => set('fecha_pedido', e.target.value)} />
@@ -417,6 +478,14 @@ export default function NuevoPedido() {
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Fecha de entrega *</label>
               <input type='date' value={form.fecha_entrega} onChange={e => set('fecha_entrega', e.target.value)} />
+            </div>
+            <div>
+              <label className='text-xs text-gray-500 mb-1 block'>Prioridad</label>
+              <select value={form.prioridad} onChange={e => set('prioridad', e.target.value)}>
+                <option value='normal'>Normal</option>
+                <option value='alta'>Alta</option>
+                <option value='urgente'>Urgente</option>
+              </select>
             </div>
           </div>
         </section>
@@ -427,7 +496,7 @@ export default function NuevoPedido() {
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Valor del abono COP</label>
-              <input placeholder='Ej: 1000000' value={form.abono} onChange={e => set('abono', e.target.value)} />
+              <input inputMode='numeric' placeholder='Ej: 1000000' value={form.abono} onChange={e => set('abono', e.target.value.replace(/\D/g, ''))} />
             </div>
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Medio de pago</label>
@@ -442,10 +511,10 @@ export default function NuevoPedido() {
               </select>
             </div>
           </div>
-          {form.precio_venta && form.abono && (
+          {total > 0 && form.abono && (
             <div className='mt-3 bg-green-50 rounded-lg p-3 text-sm grid grid-cols-2 gap-2'>
-              <div><span className='text-gray-500 text-xs block'>Abono</span><b className='text-green-700'>${Number(form.abono).toLocaleString('es-CO')}</b></div>
-              <div><span className='text-gray-500 text-xs block'>Saldo pendiente</span><b className='text-red-600'>${(Number(form.precio_venta) - Number(form.abono)).toLocaleString('es-CO')}</b></div>
+              <div><span className='text-gray-500 text-xs block'>Abono</span><b className='text-green-700'>{pesos(form.abono)}</b></div>
+              <div><span className='text-gray-500 text-xs block'>Saldo pendiente</span><b className='text-red-600'>{pesos(total - Number(form.abono))}</b></div>
             </div>
           )}
         </section>
@@ -485,7 +554,7 @@ function primerNombre(nombre) {
   return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase()
 }
 
-function textoWhatsApp(pedido, cliente) {
+function textoWhatsApp(pedido, cliente, lista = []) {
   const abono = Number(pedido.abono || 0)
   const saldo = Number(pedido.precio_venta) - abono
   const lineas = [
@@ -493,8 +562,9 @@ function textoWhatsApp(pedido, cliente) {
     `━━━━━━━━━━━━━━`,
     `Hola ${primerNombre(cliente?.nombre)}, ✅ *tu pedido ${pedido.numero} está confirmado.*`,
     ``,
-    `🛋️ *${pedido.tipo_sofa}*${Number(pedido.cantidad) > 1 ? ` × ${pedido.cantidad}` : ''}`,
-    `🎨 Tela: ${pedido.material}`,
+    ...(lista.length > 1
+      ? lista.flatMap(p => [`🛋️ *${p.tipo_sofa}*${Number(p.cantidad) > 1 ? ` × ${p.cantidad}` : ''} — ${pesos(p.precio_venta)}`, `   Tela: ${p.material}`])
+      : [`🛋️ *${pedido.tipo_sofa}*${Number(pedido.cantidad) > 1 ? ` × ${pedido.cantidad}` : ''}`, `🎨 Tela: ${pedido.material}`]),
     `📅 Entrega: *${fechaLarga(pedido.fecha_entrega)}*`,
     ``,
     `💰 Total: ${pesos(pedido.precio_venta)}`,
@@ -521,8 +591,10 @@ function cargarImagen(src) {
   })
 }
 
-async function dibujarComprobante(pedido, cliente) {
-  const W = 1080, H = (Number(pedido.abono || 0) > 0 ? 1560 : 1400) + 250
+async function dibujarComprobante(pedido, cliente, lista = []) {
+  // Con varios productos, cada uno ocupa una fila (en vez de Referencia + Tela)
+  const extra = lista.length > 1 ? (lista.length - 2) * 78 : 0
+  const W = 1080, H = (Number(pedido.abono || 0) > 0 ? 1560 : 1400) + 250 + extra
   const ORO = '#C9A84C', NEGRO = '#1a1a1a', CREMA = '#f4f1eb', GRIS = '#6b6b6b'
   const c = document.createElement('canvas')
   c.width = W; c.height = H
@@ -554,7 +626,7 @@ async function dibujarComprobante(pedido, cliente) {
 
   // Tarjeta blanca
   const conAbono = Number(pedido.abono || 0) > 0
-  const x0 = 70, y0 = 450, cw = W - 140, ch = conAbono ? 830 : 670
+  const x0 = 70, y0 = 450, cw = W - 140, ch = (conAbono ? 830 : 670) + extra
   g.fillStyle = '#ffffff'
   g.beginPath(); g.roundRect ? g.roundRect(x0, y0, cw, ch, 24) : g.rect(x0, y0, cw, ch); g.fill()
 
@@ -571,8 +643,10 @@ async function dibujarComprobante(pedido, cliente) {
   const abono = Number(pedido.abono || 0)
   const saldo = Number(pedido.precio_venta) - abono
   const filas = [
-    ['Referencia', String(pedido.tipo_sofa || '') + (Number(pedido.cantidad) > 1 ? `  × ${pedido.cantidad}` : '')],
-    ['Tela', String(pedido.material || '')],
+    ...(lista.length > 1
+      ? lista.map(p => [String(p.tipo_sofa || '') + (Number(p.cantidad) > 1 ? ` × ${p.cantidad}` : ''), String(p.material || '')])
+      : [['Referencia', String(pedido.tipo_sofa || '') + (Number(pedido.cantidad) > 1 ? `  × ${pedido.cantidad}` : '')],
+         ['Tela', String(pedido.material || '')]]),
     ['Fecha de entrega', fechaLarga(pedido.fecha_entrega)],
     ['Valor total', pesos(pedido.precio_venta)],
   ]
@@ -611,7 +685,7 @@ async function dibujarComprobante(pedido, cliente) {
 
   // Fecha de emisión
   g.textAlign = 'center'; g.fillStyle = GRIS; g.font = `22px ${sans}`
-  g.fillText(`Emitido el ${fechaLarga(new Date().toISOString())}`, W / 2, y0 + ch + 50)
+  g.fillText(`Emitido el ${fechaLarga(new Date(Date.now() - 5 * 3600 * 1000).toISOString())}`, W / 2, y0 + ch + 50)
 
   // QR de seguimiento
   const qy = y0 + ch + 80, qh = 210
