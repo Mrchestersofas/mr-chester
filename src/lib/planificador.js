@@ -29,6 +29,13 @@ export function diaSemana(iso) { return new Date(iso + 'T12:00:00Z').getUTCDay()
 export function capacidad(iso) { return FESTIVOS.has(iso) ? 0 : CUPOS_DIA[diaSemana(iso)] }
 export function esHabil(iso) { return capacidad(iso) > 0 }
 export function sumarHabiles(iso, n) { let d = iso; let k = 0; while (k < n) { d = sumarDias(d, 1); if (esHabil(d)) k++ } return d }
+// Primer día que se puede programar: hoy, salvo que ya terminó la jornada (5 p. m.; sábado 1 p. m.)
+export function primerDiaPlan(hoy = hoyColombia()) {
+  const ahora = new Date(Date.now() - 5 * 3600 * 1000)
+  const hora = ahora.getUTCHours() + ahora.getUTCMinutes() / 60
+  const termino = hoy === hoyColombia() && hora >= (diaSemana(hoy) === 6 ? 13 : 17)
+  return esHabil(hoy) && !termino ? hoy : sumarHabiles(hoy, 1)
+}
 export function esBogota(ciudad) { const c = String(ciudad || '').toLowerCase(); return !c.trim() || c.includes('bogot') }
 
 export function cuposDe(tipoSofa, cantidad, productos) {
@@ -45,7 +52,7 @@ export function planificar(filas, productos, hoy = hoyColombia()) {
   const usados = {}
   const usar = (dia, c) => { usados[dia] = (usados[dia] || 0) + c }
   const libre = dia => capacidad(dia) - (usados[dia] || 0)
-  const primerDia = esHabil(hoy) ? hoy : sumarHabiles(hoy, 1)
+  const primerDia = primerDiaPlan(hoy)
 
   const items = filas.filter(f => f.pedido && f.etapa_actual !== 'completado' && f.pedido.estado !== 'cancelado' && f.pedido.estado !== 'entregado')
     .map(f => {
@@ -98,7 +105,7 @@ export function planificar(filas, productos, hoy = hoyColombia()) {
 
 /** Primer día con cupo libre (sin mover a nadie), para sugerir fechas a pedidos nuevos. */
 export function primerCupoLibre(usados, cupos = 1, desde = hoyColombia()) {
-  let d = esHabil(desde) ? desde : sumarHabiles(desde, 1)
+  let d = primerDiaPlan(desde)
   let guard = 0
   while (capacidad(d) - (usados[d] || 0) + 1e-9 < Math.min(cupos, capacidad(d) || 99) && guard++ < 800) d = sumarHabiles(d, 1)
   return d
