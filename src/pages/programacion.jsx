@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre } from '@/lib/planificador'
+import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre, primerDiaPlan } from '@/lib/planificador'
 
 /* Programación de fábrica: 3 cupos por día (sábado 2), por fecha de entrega prometida.
    Muestra cuándo se fabrica cada pedido, cuándo queda listo, la entrega real estimada
@@ -175,7 +175,7 @@ function Reprogramar({ p, usados, cerrar, listo }) {
   const hoy = hoyColombia()
   // Cupos libres de cada día sin contar este mismo pedido
   const opciones = []
-  for (let k = 0, d = esHabil(hoy) ? hoy : sumarHabiles(hoy, 1); opciones.length < 30 && k < 90; k++, d = sumarHabiles(d, 1)) {
+  for (let k = 0, d = primerDiaPlan(hoy); opciones.length < 30 && k < 90; k++, d = sumarHabiles(d, 1)) {
     const mio = d >= p.dia_inicio && d <= p.dia_fin ? (p.dia_inicio === p.dia_fin ? p.cupos : p.peso) : 0
     opciones.push({ d, libre: capacidad(d) - (usados[d] || 0) + mio })
   }
