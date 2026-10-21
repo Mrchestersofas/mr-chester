@@ -3,6 +3,7 @@
 // lo que toca comprar hoy (por proveedor) y los pedidos en producción.
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { normalizar, linkSemanaJefe } from '@/lib/etapas'
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -30,6 +31,23 @@ export default async function handler(req, res) {
       .in('estado', ['pendiente', 'estructura', 'tapizado', 'costura', 'control_calidad'])
       .order('fecha_entrega', { ascending: true }),
   ])
+  // Los lunes: botón para mandarle a Luis (jefe de producción) la programación de la semana por WhatsApp
+  let bloqueLuis = ''
+  if (dia === 1) {
+    const { data: prog } = await supabase.from('programacion_produccion')
+      .select('*, pedido:pedidos(numero, tipo_sofa, material, cantidad, fecha_entrega, prioridad, estado)')
+      .neq('etapa_actual', 'completado')
+    const items = (prog || []).filter(f => f.pedido && !['entregado', 'cancelado'].includes(f.pedido.estado)).map(normalizar)
+    const n = items.filter(it => it.dia >= hoy && it.dia <= new Date(new Date(hoy + 'T12:00:00Z').getTime() + 5 * 86400000).toISOString().slice(0, 10)).length
+    bloqueLuis = `
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:28px;"><tr>
+        <td style="padding:18px 20px;text-align:center;">
+          <p style="margin:0 0 6px;color:#166534;font-size:12px;letter-spacing:2px;font-weight:700;">📅 PROGRAMACIÓN DE LA SEMANA PARA LUIS</p>
+          <p style="margin:0 0 14px;color:#166534;font-size:14px;">${n} pedido${n === 1 ? '' : 's'} programado${n === 1 ? '' : 's'} esta semana. Toca el botón y dale enviar en WhatsApp.</p>
+          <a href="${linkSemanaJefe(items, hoy)}" style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:6px;">ENVIAR A LUIS POR WHATSAPP</a>
+        </td></tr></table>`
+  }
+
   const deHoy = (provs || []).filter(p => (p.dias || []).includes(dia))
     .map(p => ({ ...p, insumos: (p.insumos || []).filter(i => i.activo).sort((a, b) => a.orden - b.orden) }))
   const totalHoy = deHoy.reduce((s, p) => s + totalProv(p), 0)
@@ -78,7 +96,7 @@ export default async function handler(req, res) {
   <tr><td style="background:#C9A84C;padding:10px 30px;text-align:center;">
     <p style="margin:0;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-weight:700;">🛒 HOY TOCA COMPRAR · ${fechaTexto(hoy).toUpperCase()}</p>
   </td></tr>
-  <tr><td style="background:#fff;padding:30px;">${bloqueCompras}${bloquePedidos}</td></tr>
+  <tr><td style="background:#fff;padding:30px;">${bloqueLuis}${bloqueCompras}${bloquePedidos}</td></tr>
   <tr><td style="background:#111;padding:16px 30px;text-align:center;border-radius:0 0 8px 8px;">
     <p style="margin:0;color:#888;font-size:11px;">Resumen automático · ERP Mr. Chester</p>
   </td></tr>
