@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
 /* Finanzas: calendario de pagos (empresa y personales), flujo de caja proyectado,
@@ -146,7 +147,8 @@ function Calendario({ d, recargar }) {
       {pendientesDato.length > 0 && (
         <div className='card border-amber-300'>
           <div className='font-semibold text-amber-800 mb-1'>Faltan datos ({pendientesDato.length})</div>
-          <p className='text-xs text-gray-600 mb-2'>Estos pagos no salen en el calendario hasta tener valor y fecha. Complétalos en la pestaña Pagos.</p>
+          <p className='text-xs text-gray-600 mb-2'>Estos pagos no salen en el calendario hasta tener valor y fecha.</p>
+          <Link href='/gastos' className='btn btn-primary w-full text-center block mb-2'>📝 Completarlos ahora</Link>
           <div className='text-sm text-gray-700'>{pendientesDato.map(p => p.concepto).join(' · ')}</div>
         </div>
       )}
@@ -223,8 +225,10 @@ function Flujo({ d }) {
   const [incluirPersonal, setIncluirPersonal] = useState(true)
   const lunes0 = lunesDe(hoy)
   const semanas = Array.from({ length: 9 }, (_, k) => sumar(lunes0, 7 * k))
-  const saldoIni = d.cuentas.reduce((s, c) => s + (Number(c.saldo) || 0), 0)
-  const sinSaldo = d.cuentas.filter(c => c.saldo == null)
+  // Las tarjetas de crédito no son plata disponible: su pago mensual ya está en Pagos
+  const efectivo = d.cuentas.filter(c => c.tipo !== 'tarjeta de crédito')
+  const saldoIni = efectivo.reduce((s, c) => s + (Number(c.saldo) || 0), 0)
+  const sinSaldo = efectivo.filter(c => c.saldo == null)
   const pagado = (p, per) => d.movs.some(m => m.pago_id === p.id && m.periodo === per)
 
   // Salidas por pagos (lo vencido sin pagar cuenta en la semana actual)
@@ -385,10 +389,11 @@ function EditarPago({ p, cuentas, cerrar, listo }) {
 
 function Cuentas({ d, recargar }) {
   const [editando, setEditando] = useState(null)
-  const total = d.cuentas.reduce((s, c) => s + (Number(c.saldo) || 0), 0)
+  const total = d.cuentas.filter(c => c.tipo !== 'tarjeta de crédito').reduce((s, c) => s + (Number(c.saldo) || 0), 0)
   return (
     <div className='space-y-2'>
-      <div className='card flex justify-between font-semibold'><span>Total en cuentas</span><span>{pesos(total)}</span></div>
+      <div className='card flex justify-between font-semibold'><span>Total disponible (sin tarjetas)</span><span>{pesos(total)}</span></div>
+      <Link href='/gastos' className='btn w-full text-center block'>📝 Completar gastos que faltan</Link>
       {d.cuentas.map(c => editando === c.id
         ? <EditarCuenta key={c.id} c={c} cerrar={() => setEditando(null)} listo={() => { setEditando(null); recargar() }} />
         : (
