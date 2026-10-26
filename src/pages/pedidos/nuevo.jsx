@@ -10,7 +10,7 @@ const OTRO = '__otro'
 const itemVacio = () => ({ categoria: '', referencia_id: '', ref_otro: '', tela_id: '', tela_otra: '', cantidad: 1, precio: '' })
 
 // Canales de venta (de dónde viene el pedido)
-const CANALES = [['tienda_85', 'Tienda 85'], ['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['falabella', 'Falabella']]
+const CANALES = [['tienda_85', 'Tienda 85'], ['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['falabella', 'Falabella'], ['web', 'Página web']]
 
 export default function NuevoPedido() {
   const router = useRouter()
@@ -128,7 +128,7 @@ export default function NuevoPedido() {
       if (!(Number(it.cantidad) > 0)) e.push(`La cantidad debe ser mayor a 0${n}.`)
       if (!(Number(it.precio) > 0)) e.push(`Escribe el precio, solo números${n}.`)
     })
-    if (!form.canal) e.push('Elige el canal de venta (Tienda 85, WhatsApp, Instagram o Falabella).')
+    if (!form.canal) e.push('Elige el canal de venta.')
     if (!form.fecha_entrega) e.push('Elige la fecha de entrega.')
     if (form.abono && isNaN(Number(form.abono))) e.push('El abono debe ser solo números.')
     if (Number(form.abono) > total) e.push('El abono no puede ser mayor al total.')
@@ -493,7 +493,7 @@ export default function NuevoPedido() {
           <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Fechas</h2>
           <div className='mb-3'>
             <label className='text-xs text-gray-500 mb-1 block'>Canal de venta *</label>
-            <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+            <div className='grid grid-cols-2 gap-2 sm:grid-cols-5'>
               {CANALES.map(([k, l]) => (
                 <button key={k} type='button' onClick={() => set('canal', k)}
                   className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${form.canal === k ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700'}`}>{l}</button>
