@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   LayoutDashboard, ClipboardList, PlusCircle,
-  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText, CalendarDays, Truck, Wallet, LogOut, Target, MessageCircle
+  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText, CalendarDays, Truck, Wallet, LogOut, Target, MessageCircle, Landmark
 } from 'lucide-react'
 
 const navItems = [
@@ -20,6 +20,7 @@ const navItems = [
   { href: '/despachos',     label: 'Despachos',     icon: Truck },
   { href: '/finanzas',      label: 'Finanzas',      icon: Wallet },
   { href: '/ventas',        label: 'Ventas',        icon: TrendingUp },
+  { href: '/contabilidad',  label: 'Contabilidad',  icon: Landmark },
   { href: '/compras',       label: 'Compras',       icon: ShoppingCart },
   { href: '/materiales',    label: 'Materiales',    icon: Package },
   { href: '/costos',        label: 'Costos',        icon: Calculator },
