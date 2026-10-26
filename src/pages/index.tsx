@@ -72,20 +72,25 @@ function BuscadorPedido() {
       .neq('estado', 'entregado')
       .limit(5)
 
-    // También buscar por nombre de cliente
-    const { data: porCliente } = await supabase
+    // También buscar por cliente: nombre, cédula/NIT o teléfono
+    const t = busqueda.trim().replace(/[%,()]/g, '')
+    const dig = t.replace(/\D/g, '')
+    const filtros = [`nombre.ilike.%${t}%`]
+    if (dig.length >= 4) filtros.push(`cedula.ilike.%${dig}%`, `telefono.ilike.%${dig}%`)
+    const { data: clis } = await supabase.from('clientes').select('id').or(filtros.join(',')).limit(30)
+    const ids = (clis || []).map((c: any) => c.id)
+    const { data: porCliente } = ids.length ? await supabase
       .from('pedidos')
       .select('*, cliente:clientes(nombre, cedula, telefono, direccion, ciudad, email), programacion:programacion_produccion(*)')
-      .neq('estado', 'entregado')
-      .limit(20)
-
-    const porClienteFiltrado = (porCliente || []).filter(p =>
-      (p.cliente as any)?.nombre?.toLowerCase().includes(busqueda.toLowerCase())
-    )
+      .in('cliente_id', ids)
+      .not('estado', 'in', '(entregado,cancelado)')
+      .order('created_at', { ascending: false })
+      .limit(20) : { data: [] }
+    const porClienteFiltrado = porCliente || []
 
     const todos = [...(data || []), ...porClienteFiltrado]
     const unicos = todos.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
-    setResultados(unicos.slice(0, 6))
+    setResultados(unicos.slice(0, 10))
     setBuscando(false)
   }
 
@@ -281,6 +286,7 @@ export default function Dashboard() {
   const [comprasHoy, setComprasHoy] = useState<any[]>([])
   const [pedidosCompraHoy, setPedidosCompraHoy] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [resumen, setResumen] = useState<any>({ activos: 0, enProd: 0, ventasMes: 0 })
 
   useEffect(() => {
     async function load() {
@@ -292,6 +298,18 @@ export default function Dashboard() {
         supabase.from('compra_pedidos').select('proveedor_id, created_at').eq('fecha', hoy),
       ])
       setPedidos(p || [])
+      // Contadores reales (no solo los 10 recientes)
+      const mesIni = hoy.slice(0, 8) + '01'
+      const [{ count: nAct }, { data: prog }, { data: delMes }] = await Promise.all([
+        supabase.from('pedidos').select('id', { count: 'exact', head: true }).not('estado', 'in', '(entregado,cancelado)'),
+        supabase.from('programacion_produccion').select('etapa_actual, pedido:pedidos(estado)').not('etapa_actual', 'in', '(cola,completado,despacho)'),
+        supabase.from('pedidos').select('precio_venta').neq('estado', 'cancelado').gte('fecha_pedido', mesIni).lte('fecha_pedido', hoy),
+      ])
+      setResumen({
+        activos: nAct || 0,
+        enProd: (prog || []).filter((x: any) => x.pedido && !['entregado', 'cancelado'].includes(x.pedido.estado)).length,
+        ventasMes: (delMes || []).reduce((a: number, x: any) => a + Number(x.precio_venta || 0), 0),
+      })
       setComprasHoy((provs || []).filter((x: any) => (x.dias || []).includes(dia)).map((x: any) => ({
         ...x,
         total: (x.insumos || []).filter((i: any) => i.activo).reduce((a: number, i: any) => a + Number(i.precio) * Number(i.cantidad), 0) + Number(x.costo_fijo || 0),
@@ -302,12 +320,9 @@ export default function Dashboard() {
     load()
   }, [])
 
-  const activos    = pedidos.filter(p => !['entregado'].includes(p.estado))
-  const enProd     = pedidos.filter(p => ['estructura','tapizado','costura','control_calidad'].includes(p.estado))
   const totalComprasHoy = comprasHoy.reduce((a, x) => a + x.total, 0)
   const pedidoHecho = (id: string) => pedidosCompraHoy.some(x => x.proveedor_id === id)
   const porPedir = comprasHoy.filter(x => !pedidoHecho(x.id)).length
-  const totalMes   = pedidos.reduce((s, p) => s + Number(p.precio_venta), 0)
   const diasRestantes = (fecha: string) => differenceInDays(parseISO(fecha), new Date())
 
   if (loading) return (
@@ -340,14 +355,14 @@ export default function Dashboard() {
             <ClipboardList size={15} className='text-gray-400' />
             <span className='text-xs text-gray-400'>Pedidos activos</span>
           </div>
-          <div className='text-2xl font-medium'>{activos.length}</div>
+          <div className='text-2xl font-medium'>{resumen.activos}</div>
         </div>
         <div className='card'>
           <div className='flex items-center gap-2 mb-2'>
             <Wrench size={15} className='text-gray-400' />
             <span className='text-xs text-gray-400'>En producción</span>
           </div>
-          <div className='text-2xl font-medium'>{enProd.length}</div>
+          <div className='text-2xl font-medium'>{resumen.enProd}</div>
         </div>
         <Link href='/compras' className='card hover:border-amber-300 transition-colors'>
           <div className='flex items-center gap-2 mb-2'>
@@ -359,13 +374,13 @@ export default function Dashboard() {
             {!comprasHoy.length ? 'Sin compras hoy' : porPedir > 0 ? `${porPedir} por pedir` : '✓ Todo pedido'}
           </div>
         </Link>
-        <div className='card'>
+        <Link href='/ventas' className='card hover:border-purple-300 transition-colors'>
           <div className='flex items-center gap-2 mb-2'>
             <DollarSign size={15} className='text-gray-400' />
-            <span className='text-xs text-gray-400'>Ingresos registrados</span>
+            <span className='text-xs text-gray-400'>Ventas del mes</span>
           </div>
-          <div className='text-2xl font-medium'>${(totalMes / 1_000_000).toFixed(1)}M</div>
-        </div>
+          <div className='text-2xl font-medium'>${(resumen.ventasMes / 1_000_000).toFixed(1)}M</div>
+        </Link>
       </div>
 
       <div className='grid grid-cols-1 md:grid-cols-2 gap-5 mb-5'>
