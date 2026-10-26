@@ -34,7 +34,7 @@ function html(r, c) {
       </td></tr></table>
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
       ${fila('Cliente', esc(c?.nombre || '—'), 'font-weight:600;')}
-      ${c?.cedula ? fila('Cédula', esc(c.cedula)) : ''}
+      ${c?.cedula ? fila(c.tipo_documento === 'NIT' ? 'NIT' : 'Cédula', esc(c.cedula + (c.tipo_documento === 'NIT' && c.dv ? '-' + c.dv : ''))) : ''}
       ${c?.direccion ? fila('Dirección', esc(c.direccion + (c.ciudad ? ', ' + c.ciudad : ''))) : ''}
       ${(r.items || []).map(i => fila(esc(i.numero), `<strong>${esc(i.tipo_sofa)}</strong>${i.cantidad > 1 ? ' × ' + i.cantidad : ''}<br><span style="color:#888;font-size:12px;">Tela: ${esc(i.material)}</span>`)).join('')}
       ${fila('Fecha de entrega', fecha(r.fecha), 'font-weight:600;')}
