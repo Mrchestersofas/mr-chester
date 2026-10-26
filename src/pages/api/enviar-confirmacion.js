@@ -85,8 +85,8 @@ export default async function handler(req, res) {
         </tr>
         ${cliente?.cedula ? `
         <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">Cédula</td>
-          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.cedula}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:13px;color:#888;font-family:Arial,sans-serif;">${cliente.tipo_documento === 'NIT' ? 'NIT' : 'Cédula'}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #f0ebe0;font-size:14px;color:#1a1a1a;font-family:Arial,sans-serif;">${cliente.cedula}${cliente.tipo_documento === 'NIT' && cliente.dv ? '-' + cliente.dv : ''}</td>
         </tr>` : ''}
         ${varios ? items.map(it => `
         <tr>
