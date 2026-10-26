@@ -49,7 +49,7 @@ export default function Cotizaciones() {
 function Nueva({ clientes, setClientes, productos, telas, alGuardar, verTodas }) {
   const [form, setForm] = useState({
     cliente_id: '', crear_cliente: false,
-    nuevo_nombre: '', nuevo_cedula: '', nuevo_tel: '', nuevo_email: '', nuevo_direccion: '', nuevo_ciudad: '',
+    nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_tel: '', nuevo_email: '', nuevo_direccion: '', nuevo_ciudad: '',
     descuento: '', observaciones: '',
   })
   const [items, setItems] = useState([itemVacio()])
@@ -102,7 +102,7 @@ function Nueva({ clientes, setClientes, productos, telas, alGuardar, verTodas })
     let cliente
     if (form.crear_cliente) {
       const { data: nc, error } = await supabase.from('clientes').insert({
-        nombre: form.nuevo_nombre.trim(), cedula: form.nuevo_cedula, telefono: form.nuevo_tel,
+        nombre: form.nuevo_nombre.trim(), cedula: form.nuevo_cedula, tipo_documento: form.nuevo_tipo, dv: form.nuevo_tipo === 'NIT' ? (form.nuevo_dv || null) : null, telefono: form.nuevo_tel,
         email: form.nuevo_email.trim() || null, direccion: form.nuevo_direccion, ciudad: form.nuevo_ciudad,
       }).select().single()
       if (error || !nc) { setErrores(['No se pudo guardar el cliente: ' + (error?.message || 'error') + '. La cotización NO se guardó.']); setGuardando(false); return }
@@ -138,7 +138,7 @@ function Nueva({ clientes, setClientes, productos, telas, alGuardar, verTodas })
 
   function otra() {
     setResultado(null); setErrores([]); setItems([itemVacio()])
-    setForm(f => ({ ...f, cliente_id: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tel: '', nuevo_email: '', nuevo_direccion: '', nuevo_ciudad: '', descuento: '', observaciones: '' }))
+    setForm(f => ({ ...f, cliente_id: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_tel: '', nuevo_email: '', nuevo_direccion: '', nuevo_ciudad: '', descuento: '', observaciones: '' }))
   }
 
   if (resultado) return <Resultado {...resultado} otra={otra} verTodas={verTodas} />
@@ -167,7 +167,7 @@ function Nueva({ clientes, setClientes, productos, telas, alGuardar, verTodas })
             <div className='space-y-3'>
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <Campo l='Nombre completo *'><input value={form.nuevo_nombre} onChange={e => set('nuevo_nombre', e.target.value)} placeholder='Nombre completo' /></Campo>
-                <Campo l='Cédula'><input inputMode='numeric' value={form.nuevo_cedula} onChange={e => set('nuevo_cedula', e.target.value)} placeholder='Ej: 1234567890' /></Campo>
+                <Campo l='Documento'><div className='flex gap-2'><select className='w-28 shrink-0' value={form.nuevo_tipo} onChange={e => set('nuevo_tipo', e.target.value)}><option value='CC'>Cédula</option><option value='NIT'>NIT</option></select><input className='min-w-0 flex-1' inputMode='numeric' value={form.nuevo_cedula} onChange={e => set('nuevo_cedula', e.target.value.replace(/[^0-9]/g, ''))} placeholder={form.nuevo_tipo === 'NIT' ? 'Ej: 901574522' : 'Ej: 1234567890'} />{form.nuevo_tipo === 'NIT' && <input className='w-14 shrink-0 text-center' inputMode='numeric' maxLength={1} placeholder='DV' value={form.nuevo_dv} onChange={e => set('nuevo_dv', e.target.value.replace(/[^0-9]/g, ''))} />}</div></Campo>
                 <Campo l='Teléfono / WhatsApp'><input inputMode='tel' value={form.nuevo_tel} onChange={e => set('nuevo_tel', e.target.value)} placeholder='Ej: 3001234567' /></Campo>
                 <Campo l='Correo electrónico'><input type='email' value={form.nuevo_email} onChange={e => set('nuevo_email', e.target.value)} placeholder='correo@ejemplo.com' /></Campo>
               </div>
