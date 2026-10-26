@@ -191,7 +191,10 @@ export default function Pedidos() {
                         </div>
                       )}
                     </td>
-                    <td>{(p.cliente as any)?.nombre || '—'}</td>
+                    <td>
+                      {(p.cliente as any)?.nombre || '—'}
+                      {(p as any).canal && <div className="text-xs text-gray-500">{({ tienda_85: 'Tienda 85', whatsapp: 'WhatsApp', instagram: 'Instagram', falabella: 'Falabella', web: 'Página web' } as any)[(p as any).canal] || (p as any).canal}</div>}
+                    </td>
                     <td>{p.tipo_sofa}</td>
                     <td className="text-gray-500">{p.material} / {p.color}</td>
                     <td className="text-sm text-gray-500">
