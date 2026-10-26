@@ -25,6 +25,8 @@ export default function NuevoPedido() {
     crear_cliente: false,
     nuevo_nombre: '',
     nuevo_cedula: '',
+    nuevo_tipo: 'CC',
+    nuevo_dv: '',
     nuevo_direccion: '',
     nuevo_ciudad: '',
     nuevo_tel: '',
@@ -165,6 +167,8 @@ export default function NuevoPedido() {
       const { data: nc, error: errC } = await supabase.from('clientes').insert({
         nombre: form.nuevo_nombre.trim(),
         cedula: form.nuevo_cedula,
+        tipo_documento: form.nuevo_tipo,
+        dv: form.nuevo_tipo === 'NIT' ? (form.nuevo_dv || null) : null,
         direccion: form.nuevo_direccion,
         ciudad: form.nuevo_ciudad,
         telefono: form.nuevo_tel,
@@ -313,7 +317,7 @@ export default function NuevoPedido() {
               </div>
             )}
             {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>{correo?.omitido ? 'Enviar confirmación ahora' : 'Reintentar correo'}</button>}
-            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
+            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
             <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
           </div>
         </div>
@@ -361,8 +365,15 @@ export default function NuevoPedido() {
                   <input placeholder='Nombre completo' value={form.nuevo_nombre} onChange={e => set('nuevo_nombre', e.target.value)} />
                 </div>
                 <div>
-                  <label className='text-xs text-gray-500 mb-1 block'>Cédula</label>
-                  <input inputMode='numeric' placeholder='Ej: 1234567890' value={form.nuevo_cedula} onChange={e => set('nuevo_cedula', e.target.value)} />
+                  <label className='text-xs text-gray-500 mb-1 block'>Documento</label>
+                  <div className='flex gap-2'>
+                    <select className='w-28 shrink-0' value={form.nuevo_tipo} onChange={e => set('nuevo_tipo', e.target.value)}>
+                      <option value='CC'>Cédula</option>
+                      <option value='NIT'>NIT</option>
+                    </select>
+                    <input className='min-w-0 flex-1' inputMode='numeric' placeholder={form.nuevo_tipo === 'NIT' ? 'Ej: 901574522' : 'Ej: 1234567890'} value={form.nuevo_cedula} onChange={e => set('nuevo_cedula', e.target.value.replace(/[^0-9]/g, ''))} />
+                    {form.nuevo_tipo === 'NIT' && <input className='w-14 shrink-0 text-center' inputMode='numeric' maxLength={1} placeholder='DV' value={form.nuevo_dv} onChange={e => set('nuevo_dv', e.target.value.replace(/[^0-9]/g, ''))} />}
+                  </div>
                 </div>
               </div>
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
