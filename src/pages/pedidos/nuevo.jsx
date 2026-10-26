@@ -9,6 +9,9 @@ import { supabase } from '@/lib/supabase'
 const OTRO = '__otro'
 const itemVacio = () => ({ categoria: '', referencia_id: '', ref_otro: '', tela_id: '', tela_otra: '', cantidad: 1, precio: '' })
 
+// Canales de venta (de dónde viene el pedido)
+const CANALES = [['tienda_85', 'Tienda 85'], ['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['falabella', 'Falabella']]
+
 export default function NuevoPedido() {
   const router = useRouter()
   const [clientes, setClientes] = useState([])
@@ -21,6 +24,7 @@ export default function NuevoPedido() {
     fecha_pedido: new Date(Date.now() - 5 * 3600 * 1000).toISOString().split('T')[0],
     fecha_entrega: '',
     prioridad: 'normal',
+    canal: '',
     observaciones: '',
     crear_cliente: false,
     nuevo_nombre: '',
@@ -124,6 +128,7 @@ export default function NuevoPedido() {
       if (!(Number(it.cantidad) > 0)) e.push(`La cantidad debe ser mayor a 0${n}.`)
       if (!(Number(it.precio) > 0)) e.push(`Escribe el precio, solo números${n}.`)
     })
+    if (!form.canal) e.push('Elige el canal de venta (Tienda 85, WhatsApp, Instagram o Falabella).')
     if (!form.fecha_entrega) e.push('Elige la fecha de entrega.')
     if (form.abono && isNaN(Number(form.abono))) e.push('El abono debe ser solo números.')
     if (Number(form.abono) > total) e.push('El abono no puede ser mayor al total.')
@@ -203,6 +208,7 @@ export default function NuevoPedido() {
       fecha_pedido: form.fecha_pedido,
       fecha_entrega: form.fecha_entrega,
       prioridad: form.prioridad,
+      canal: form.canal,
       estado: 'pendiente',
       precio_venta: precios[k],
       observaciones: form.observaciones,
@@ -317,7 +323,7 @@ export default function NuevoPedido() {
               </div>
             )}
             {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>{correo?.omitido ? 'Enviar confirmación ahora' : 'Reintentar correo'}</button>}
-            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
+            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', canal: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
             <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
           </div>
         </div>
@@ -485,6 +491,15 @@ export default function NuevoPedido() {
         {/* FECHAS */}
         <section>
           <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Fechas</h2>
+          <div className='mb-3'>
+            <label className='text-xs text-gray-500 mb-1 block'>Canal de venta *</label>
+            <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+              {CANALES.map(([k, l]) => (
+                <button key={k} type='button' onClick={() => set('canal', k)}
+                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${form.canal === k ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Fecha del pedido *</label>
