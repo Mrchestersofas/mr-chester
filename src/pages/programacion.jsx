@@ -43,7 +43,7 @@ export default function Programacion() {
   const libre1 = primerCupoLibre(usados, 1)
 
   return (
-    <div className='p-4 max-w-2xl mx-auto'>
+    <div className={`p-4 mx-auto ${tab === 'mes' ? 'max-w-6xl' : 'max-w-2xl'}`}>
       <h1 className='text-xl font-medium'>Programación</h1>
       <p className='text-sm text-gray-500 mb-4'>3 cupos por día (sábado 2) · se programa por fecha de entrega prometida</p>
 
@@ -59,7 +59,7 @@ export default function Programacion() {
       </div>
 
       <div className='flex gap-2 mb-4'>
-        {[['pedidos', 'Pedidos'], ['calendario', 'Calendario'], ['recaudo', '💰 Recaudo']].map(([k, l]) => (
+        {[['pedidos', 'Pedidos'], ['mes', '🗓️ Mes'], ['calendario', 'Días'], ['recaudo', '💰 Recaudo']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${tab === k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{l}</button>
         ))}
       </div>
@@ -75,7 +75,8 @@ export default function Programacion() {
             </>
           )}
         </div>
-      ) : tab === 'calendario' ? <Calendario plan={plan} usados={usados} onReprog={setReprog} />
+      ) : tab === 'mes' ? <Mes plan={plan} onReprog={setReprog} />
+        : tab === 'calendario' ? <Calendario plan={plan} usados={usados} onReprog={setReprog} />
         : <Recaudo plan={plan} />}
 
       {reprog && <Reprogramar p={reprog} usados={usados} cerrar={() => setReprog(null)} listo={async () => { setReprog(null); setDatos(null); await cargar() }} />}
@@ -169,6 +170,107 @@ function Calendario({ plan, usados, onReprog }) {
     </div>
   )
 }
+/* Vista de mes tipo hoja: semanas en filas, días en columnas, cliente por cupo.
+   Días pasados: lo que se fabricó (dia_produccion guardado). Hoy en adelante: el plan. */
+const COLOR_ETAPA = {
+  cola: 'bg-white border-gray-200 text-gray-800',
+  fabrica: 'bg-amber-100 border-amber-300 text-amber-900',
+  terminado: 'bg-green-100 border-green-300 text-green-900',
+  entregado: 'bg-sky-100 border-sky-300 text-sky-900',
+}
+function grupoEtapa(et, estadoPedido) {
+  if (estadoPedido === 'entregado' || et === 'completado') return 'entregado'
+  if (et === 'cola') return 'cola'
+  if (et === 'terminado' || et === 'despacho') return 'terminado'
+  return 'fabrica'
+}
+function corto(nombre) { const w = String(nombre || 'Sin cliente').trim().split(/\s+/); return w.slice(0, 2).join(' ') }
+
+function Mes({ plan, onReprog }) {
+  const hoy = hoyColombia()
+  const [ancla, setAncla] = useState(hoy.slice(0, 7))
+  const [historia, setHistoria] = useState([])
+  const [y, m] = ancla.split('-').map(Number)
+  const primero = `${ancla}-01`
+  const ultimo = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+
+  useEffect(() => {
+    supabase.from('programacion_produccion')
+      .select('id, etapa_actual, dia_produccion, pedido:pedidos(numero, tipo_sofa, estado, cliente:clientes(nombre))')
+      .gte('dia_produccion', primero).lte('dia_produccion', ultimo)
+      .then(({ data }) => setHistoria((data || []).filter(r => r.pedido && r.pedido.estado !== 'cancelado')))
+  }, [ancla])
+
+  function delDia(d) {
+    if (d >= hoy) {
+      return plan.filter(p => p.etapa_actual === 'cola' ? (p.dia_inicio <= d && p.dia_fin >= d) : p.dia_inicio === d)
+        .map(p => ({ id: p.id, p, nombre: p.pedido.cliente?.nombre, modelo: p.pedido.tipo_sofa, numero: p.pedido.numero, g: grupoEtapa(p.etapa_actual, p.pedido.estado), tarde: p.estado === 'tarde', fijo: p.fijo }))
+    }
+    return historia.filter(r => r.dia_produccion === d)
+      .map(r => ({ id: r.id, nombre: r.pedido.cliente?.nombre, modelo: r.pedido.tipo_sofa, numero: r.pedido.numero, g: grupoEtapa(r.etapa_actual, r.pedido.estado) }))
+  }
+
+  // semanas de domingo a sábado que cubren el mes
+  const inicio = sumarDias(primero, -new Date(primero + 'T12:00:00Z').getUTCDay())
+  const semanas = []
+  for (let d = inicio; d <= ultimo; d = sumarDias(d, 7)) semanas.push([0, 1, 2, 3, 4, 5, 6].map(k => sumarDias(d, k)))
+  const mover = n => { const t = new Date(Date.UTC(y, m - 1 + n, 1)); setAncla(t.toISOString().slice(0, 7)) }
+
+  return (
+    <div>
+      <div className='flex items-center justify-between mb-3'>
+        <button className='btn text-sm' onClick={() => mover(-1)}>‹ Anterior</button>
+        <div className='font-semibold uppercase tracking-wide'>{MESES_L[m - 1]} {y}</div>
+        <button className='btn text-sm' onClick={() => mover(1)}>Siguiente ›</button>
+      </div>
+      <div className='flex flex-wrap gap-3 text-xs text-gray-600 mb-3'>
+        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-white border-gray-300' /> En cola</span>
+        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-amber-100 border-amber-300' /> En fábrica</span>
+        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-green-100 border-green-300' /> Terminado</span>
+        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-sky-100 border-sky-300' /> Entregado</span>
+        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border-2 border-red-500' /> Se pasa de la fecha</span>
+      </div>
+      <div className='overflow-x-auto rounded-lg border border-gray-300'>
+        <table className='w-full min-w-[760px] border-collapse table-fixed text-xs'>
+          <thead>
+            <tr className='bg-gray-800 text-white'>
+              {['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'].map(n => <th key={n} className='py-1.5 font-semibold uppercase tracking-wide'>{n}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {semanas.map(sem => (
+              <tr key={sem[0]}>
+                {sem.map(d => {
+                  const fuera = d < primero || d > ultimo
+                  const cap = capacidad(d)
+                  const items = fuera ? [] : delDia(d)
+                  return (
+                    <td key={d} className={`align-top border border-gray-300 p-1 h-24 ${fuera || cap === 0 ? 'bg-gray-100' : 'bg-white'} ${d === hoy ? 'ring-2 ring-inset ring-gray-900' : ''}`}>
+                      <div className={`text-right text-[10px] mb-0.5 ${fuera ? 'text-gray-300' : 'text-gray-500'}`}>
+                        {FESTIVOS.has(d) && !fuera ? 'Festivo · ' : ''}{Number(d.slice(8))}
+                      </div>
+                      <div className='space-y-0.5'>
+                        {items.map(it => (
+                          <button key={it.id} type='button' title={`${it.numero} · ${it.modelo}`}
+                            onClick={() => it.p && it.p.etapa_actual === 'cola' && onReprog(it.p)}
+                            className={`block w-full text-left truncate px-1 py-0.5 rounded border ${COLOR_ETAPA[it.g]} ${it.tarde ? 'border-2 border-red-500' : ''}`}>
+                            {corto(it.nombre)}{it.fijo ? ' 📌' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className='text-xs text-gray-500 mt-2'>Toca un pedido en cola para reprogramarlo. Pasa el dedo o el mouse para ver número y modelo.</p>
+    </div>
+  )
+}
+
 function diaVisible(d) { return new Date(d + 'T12:00:00Z').getUTCDay() !== 0 }
 
 function Reprogramar({ p, usados, cerrar, listo }) {
