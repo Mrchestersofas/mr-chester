@@ -53,6 +53,11 @@ function Nueva({ clientes, setClientes, productos, telas, alGuardar, verTodas })
     descuento: '', observaciones: '',
   })
   const [items, setItems] = useState([itemVacio()])
+  // Desde el CRM: /cotizaciones?cliente=ID&prospecto=ID deja el cliente elegido
+  const router = useRouter()
+  useEffect(() => {
+    if (router.query.cliente) setForm(f => ({ ...f, cliente_id: String(router.query.cliente), crear_cliente: false }))
+  }, [router.query.cliente])
   const [errores, setErrores] = useState([])
   const [guardando, setGuardando] = useState(false)
   const [resultado, setResultado] = useState(null)
@@ -120,6 +125,11 @@ function Nueva({ clientes, setClientes, productos, telas, alGuardar, verTodas })
       setGuardando(false); window.scrollTo(0, 0); return
     }
     const correo = await enviarCorreo(cot, cliente)
+    if (router.query.prospecto) {
+      const pid = String(router.query.prospecto)
+      await supabase.from('crm_prospectos').update({ etapa: 'cotizado', cliente_id: cliente.id, ultima_actividad: new Date().toISOString() }).eq('id', pid)
+      await supabase.from('crm_actividades').insert({ prospecto_id: pid, tipo: 'cotizacion', texto: `Cotización ${cot.numero} por ${pesos(cot.total)}` })
+    }
     setGuardando(false)
     setResultado({ cot, cliente, correo })
     alGuardar()
