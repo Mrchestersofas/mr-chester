@@ -66,16 +66,11 @@ export default function Pedidos() {
 
   async function eliminarPedido(p: Pedido) {
     setEliminando(p.id)
-    try {
-      await supabase.from('programacion_produccion').delete().eq('pedido_id', p.id)
-    } catch (e) {
-      // ignorar si no hay programación
-    }
-    try {
-      await supabase.from('pedidos').delete().eq('id', p.id)
-    } catch (e) {
-      console.error('Error eliminando pedido:', e)
-    }
+    // Primero lo que depende del pedido (historial y programación); si no, la base no deja borrarlo
+    await supabase.from('historial_estados').delete().eq('pedido_id', p.id)
+    await supabase.from('programacion_produccion').delete().eq('pedido_id', p.id)
+    const { error } = await supabase.from('pedidos').delete().eq('id', p.id)
+    if (error) alert('No se pudo eliminar el pedido: ' + error.message)
     setEliminando(null)
     setConfirmar(null)
     cargar()
