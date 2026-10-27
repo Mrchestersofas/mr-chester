@@ -56,6 +56,16 @@ function BuscadorPedido() {
   const [resultados, setResultados] = useState<any[]>([])
   const [buscando, setBuscando] = useState(false)
   const [seleccionado, setSeleccionado] = useState<any | null>(null)
+  const [compra, setCompra] = useState<any[]>([])
+
+  // Al abrir un pedido traemos todos los productos de la misma compra para mostrar el saldo completo
+  async function elegir(p: any) {
+    setSeleccionado(p)
+    setCompra([p])
+    if (!p.grupo) return
+    const { data } = await supabase.from('pedidos').select('id, numero, tipo_sofa, precio_venta, abono, estado').eq('grupo', p.grupo).neq('estado', 'cancelado').order('numero')
+    if (data && data.length) setCompra(data)
+  }
 
   useEffect(() => {
     if (busqueda.trim().length < 2) { setResultados([]); return }
@@ -135,7 +145,7 @@ function BuscadorPedido() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => setSeleccionado(p)}
+                  onClick={() => elegir(p)}
                   className='w-full text-left bg-gray-50 hover:bg-purple-50 rounded-xl px-4 py-3 transition-colors border border-transparent hover:border-purple-200'
                 >
                   <div className='flex items-center justify-between'>
@@ -206,6 +216,40 @@ function BuscadorPedido() {
                   </p>
                 </div>
               </div>
+
+              {/* Pago: total, abonado y saldo de toda la compra */}
+              {(() => {
+                const lineas = compra.length ? compra : [p]
+                const total = lineas.reduce((a: number, x: any) => a + Number(x.precio_venta || 0), 0)
+                const abonado = lineas.reduce((a: number, x: any) => a + Number(x.abono || 0), 0)
+                const saldo = total - abonado
+                const $ = (n: number) => '$' + Math.round(n).toLocaleString('es-CO')
+                return (
+                  <div className={`rounded-xl p-3 mb-4 border ${saldo > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+                    <div className='flex items-center justify-between mb-2'>
+                      <p className='text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                        <DollarSign size={12} className='inline -mt-0.5' /> Pago{lineas.length > 1 ? ` · compra de ${lineas.length} productos` : ''}
+                      </p>
+                      {saldo <= 0 && <span className='text-xs font-semibold text-green-700'>✓ Pagado completo</span>}
+                    </div>
+                    <div className='grid grid-cols-3 gap-2 text-center'>
+                      <div><p className='text-xs text-gray-500'>Total</p><p className='text-sm font-semibold'>{$(total)}</p></div>
+                      <div><p className='text-xs text-gray-500'>Abonado</p><p className='text-sm font-semibold text-green-700'>{$(abonado)}</p></div>
+                      <div><p className='text-xs text-gray-500'>Saldo</p><p className={`text-lg font-bold ${saldo > 0 ? 'text-amber-700' : 'text-green-700'}`}>{$(Math.max(0, saldo))}</p></div>
+                    </div>
+                    {lineas.length > 1 && (
+                      <div className='mt-2 pt-2 border-t border-black/5 space-y-0.5'>
+                        {lineas.map((x: any) => (
+                          <div key={x.id} className='flex justify-between text-xs text-gray-600'>
+                            <span>{x.numero} · {x.tipo_sofa}</span>
+                            <span>saldo {$(Math.max(0, Number(x.precio_venta || 0) - Number(x.abono || 0)))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Inicio en cola */}
               {etapa === 'cola' && prog?.inicio_estructura && (
