@@ -146,7 +146,7 @@ export default function Pedidos() {
         </select>
       </div>
 
-      <div className="card p-0 overflow-hidden">
+      <div className="card p-0 overflow-x-auto">
         {loading ? (
           <p className="p-6 text-sm text-gray-400 text-center">Cargando...</p>
         ) : filtrados.length === 0 ? (
@@ -232,7 +232,7 @@ export default function Pedidos() {
                       </button>
                       <button
                         onClick={() => setConfirmar(p)}
-                        className="text-gray-300 hover:text-red-500 transition-colors p-1 rounded"
+                        className="text-red-400 hover:text-red-600 transition-colors p-1 rounded"
                         title="Eliminar pedido"
                       >
                         <Trash2 size={15} />
