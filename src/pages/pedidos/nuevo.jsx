@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '@/lib/supabase'
+import { planificar, primerDiaPlan, sumarDias, sumarHabiles, capacidad, esHabil, esBogota, CUPOS_CATEGORIA } from '@/lib/planificador'
+import { fCorta } from '@/lib/etapas'
 
 /* Nuevo pedido. Un pedido puede tener varios productos: el primero toma el número (MC-040)
    y los demás quedan como MC-040-2, MC-040-3…, todos con grupo = MC-040. Cada producto entra
@@ -89,10 +91,49 @@ export default function NuevoPedido() {
 
   function set(f, v) { setForm(p => ({ ...p, [f]: v })) }
 
+
   const [errores, setErrores] = useState([])
   const [resultado, setResultado] = useState(null)
   const [compartiendo, setCompartiendo] = useState(false)
   const [comprobanteUrl, setComprobanteUrl] = useState(null)
+
+  // FECHA DE ENTREGA: 'auto' = primer cupo libre en la programación, 'dias' = días hábiles prometidos, 'fecha' = escogerla a mano
+  const [modoEntrega, setModoEntrega] = useState('auto')
+  const [diasPrometidos, setDiasPrometidos] = useState('')
+  const [usados, setUsados] = useState(null)
+  useEffect(() => {
+    if (resultado) return
+    Promise.all([
+      supabase.from('programacion_produccion').select('*, pedido:pedidos(id, numero, tipo_sofa, cantidad, estado, fecha_pedido, fecha_entrega, cliente:clientes(ciudad))'),
+      supabase.from('productos').select('referencia, categoria'),
+    ]).then(([{ data: filas }, { data: prods }]) => setUsados(planificar(filas || [], prods || []).usados))
+  }, [resultado])
+
+  const ciudadCliente = form.crear_cliente ? form.nuevo_ciudad : (clientes.find(c => c.id === form.cliente_id)?.ciudad || '')
+  const sugerida = (() => {
+    if (!usados) return null
+    const u = { ...usados }
+    const libre = d => capacidad(d) - (u[d] || 0)
+    let d = primerDiaPlan(), ultimo = null
+    const lista = items.some(it => it.referencia_id) ? items : [itemVacio()]
+    for (const it of lista) {
+      const cat = productos.find(p => p.id === it.referencia_id)?.categoria
+      const peso = CUPOS_CATEGORIA[cat] ?? 1
+      for (let k = 0; k < Math.max(1, Number(it.cantidad) || 1); k++) {
+        let guard = 0
+        while ((!esHabil(d) || libre(d) + 1e-9 < Math.min(peso, capacidad(d) || 99)) && guard++ < 800) d = sumarDias(d, 1)
+        u[d] = (u[d] || 0) + peso
+        ultimo = d
+      }
+    }
+    const listo = sumarHabiles(ultimo, 1)
+    return { fabrica: ultimo, entrega: sumarHabiles(listo, esBogota(ciudadCliente) ? 1 : 5) }
+  })()
+
+  useEffect(() => {
+    if (modoEntrega === 'auto' && sugerida) set('fecha_entrega', sugerida.entrega)
+    if (modoEntrega === 'dias') set('fecha_entrega', Number(diasPrometidos) > 0 ? sumarHabiles(form.fecha_pedido, Number(diasPrometidos)) : '')
+  }, [modoEntrega, sugerida?.entrega, diasPrometidos, form.fecha_pedido])
 
   async function compartirComprobante(pedido, cliente, lista, texto) {
     setCompartiendo(true)
@@ -323,7 +364,7 @@ export default function NuevoPedido() {
               </div>
             )}
             {cliente?.email && !correo?.cliente_ok && !correo?.enviando && <button className='btn' onClick={reenviar}>{correo?.omitido ? 'Enviar confirmación ahora' : 'Reintentar correo'}</button>}
-            <button className='btn' onClick={() => { setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', canal: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
+            <button className='btn' onClick={() => { setModoEntrega('auto'); setDiasPrometidos(''); setUsados(null); setResultado(null); setComprobanteUrl(null); setItems([itemVacio()]); setForm(f => ({ ...f, cliente_id: '', canal: '', abono: '', medio_pago: '', observaciones: '', crear_cliente: false, nuevo_nombre: '', nuevo_cedula: '', nuevo_tipo: 'CC', nuevo_dv: '', nuevo_direccion: '', nuevo_ciudad: '', nuevo_tel: '', nuevo_email: '', fecha_entrega: '' })) }}>Registrar otro pedido</button>
             <button className='btn' onClick={() => router.push('/pedidos')}>Ver todos los pedidos</button>
           </div>
         </div>
@@ -346,6 +387,42 @@ export default function NuevoPedido() {
         </div>
       )}
       <div className='card space-y-6'>
+
+        {/* ENTREGA */}
+        <section>
+          <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3'>Fecha de entrega *</h2>
+          <div className='grid grid-cols-3 gap-2 mb-3'>
+            {[['auto', '📅 Según programación'], ['dias', '🔢 Días prometidos'], ['fecha', '✏️ Escoger fecha']].map(([k, l]) => (
+              <button key={k} type='button' onClick={() => setModoEntrega(k)}
+                className={`rounded-lg border px-2 py-2.5 text-sm font-medium ${modoEntrega === k ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700'}`}>{l}</button>
+            ))}
+          </div>
+          {modoEntrega === 'auto' && (
+            !sugerida ? <p className='text-sm text-gray-400'>Revisando la programación…</p> : (
+              <div className='rounded-lg bg-purple-50 border border-purple-100 p-3 text-sm'>
+                <p>Primer cupo libre en fábrica: <b>{fCorta(sugerida.fabrica)}</b></p>
+                <p className='text-lg font-semibold text-purple-800 mt-1'>Entrega: {fechaLarga(sugerida.entrega)}</p>
+                <p className='text-xs text-gray-500 mt-1'>{esBogota(ciudadCliente) ? 'Bogotá: 1 día hábil después de terminado.' : 'Fuera de Bogotá: hasta 5 días hábiles después de terminado.'} Se recalcula al elegir los productos y la ciudad.</p>
+              </div>
+            )
+          )}
+          {modoEntrega === 'dias' && (
+            <div className='grid grid-cols-2 gap-3 items-end'>
+              <div>
+                <label htmlFor='dias-prom' className='text-xs text-gray-500 mb-1 block'>Días hábiles prometidos</label>
+                <input id='dias-prom' inputMode='numeric' placeholder='Ej: 30' value={diasPrometidos} onChange={e => setDiasPrometidos(e.target.value.replace(/\D/g, ''))} />
+              </div>
+              <p className='text-sm pb-2'>{form.fecha_entrega ? <>Entrega: <b>{fechaLarga(form.fecha_entrega)}</b></> : <span className='text-gray-400'>Escribe los días</span>}</p>
+            </div>
+          )}
+          {modoEntrega === 'fecha' && (
+            <input type='date' aria-label='Fecha de entrega' value={form.fecha_entrega} onChange={e => set('fecha_entrega', e.target.value)} />
+          )}
+          {modoEntrega !== 'auto' && sugerida && form.fecha_entrega && form.fecha_entrega < sugerida.entrega && (
+            <p className='mt-2 text-sm text-amber-700'>⚠ Con la programación actual lo más pronto sería el {fechaLarga(sugerida.entrega)}. Esta fecha obligaría a mover otros pedidos.</p>
+          )}
+          {modoEntrega === 'dias' && <p className='text-xs text-gray-500 mt-2'>Días hábiles: lunes a sábado, sin domingos ni festivos, contados desde la fecha del pedido.</p>}
+        </section>
 
         {/* CLIENTE */}
         <section>
@@ -500,14 +577,10 @@ export default function NuevoPedido() {
               ))}
             </div>
           </div>
-          <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Fecha del pedido *</label>
               <input type='date' value={form.fecha_pedido} onChange={e => set('fecha_pedido', e.target.value)} />
-            </div>
-            <div>
-              <label className='text-xs text-gray-500 mb-1 block'>Fecha de entrega *</label>
-              <input type='date' value={form.fecha_entrega} onChange={e => set('fecha_entrega', e.target.value)} />
             </div>
             <div>
               <label className='text-xs text-gray-500 mb-1 block'>Prioridad</label>
