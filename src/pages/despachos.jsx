@@ -138,8 +138,87 @@ function Grupo({ x, recargar, alDespachar }) {
 
           {elegidos.length > 0 && <Transportador x={x} elegidos={elegidos} saldo={saldo} por={por} setPor={setPor} tel={telT} setTel={setTelT} />}
           {elegidos.length === 0 ? <p className='text-sm text-gray-500'>Elige al menos un producto.</p>
-            : saldo > 0 ? <Pago elegidos={elegidos} saldo={saldo} listo={recargar} />
+            : saldo > 0 ? <><CobrarSaldo c={c} elegidos={elegidos} saldo={saldo} /><Pago elegidos={elegidos} saldo={saldo} listo={recargar} /></>
             : <Despachar x={x} elegidos={elegidos} total={total} pagado={pagado} alDespachar={alDespachar} por={por} setPor={setPor} tel={telT} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Cobrar el saldo por WhatsApp ---------- */
+
+const MEDIOS_EJEMPLO = '🏦 *Bancolombia* – Cuenta de ahorros [número]\n   A nombre de Mr. Chester Export S.A.S. · NIT [NIT]\n🔑 *Llave Bancolombia:* [llave]\n📱 *Nequi:* [número]\n💳 *Tarjeta de crédito:* te enviamos un link de pago, sin costo adicional'
+
+function mensajeCobro(c, elegidos, saldo, medios) {
+  const productos = elegidos.map(p => p.tipo_sofa + (p.cantidad > 1 ? ` ×${p.cantidad}` : '')).join(' + ')
+  const listos = elegidos.every(p => etapaDe(p) === 'despacho')
+  return [
+    '♛ *MR. CHESTER* ♛',
+    '_Sofás Chesterfield · Fabricantes_',
+    '',
+    `¡Hola, ${primerNombre(c?.nombre) || ''}! 👋`,
+    '',
+    listos ? `Tenemos una excelente noticia: tu *${productos}* ya está *listo para despacho* 🛋️✨` : `Te escribimos por tu pedido *${productos}* 🛋️`,
+    '',
+    `📦 Pedido: *${elegidos.map(p => p.numero).join(', ')}*`,
+    `💰 Saldo pendiente: *${pesos(saldo)}*`,
+    '',
+    'Para programar la entrega, te pedimos realizar el pago del saldo por cualquiera de estos medios:',
+    '',
+    medios,
+    '',
+    'Cuando realices el pago, envíanos el comprobante por este chat y coordinamos la fecha y hora de entrega 🚚',
+    '',
+    '¡Gracias por elegir Mr. Chester! 🙌',
+  ].join('\n')
+}
+
+function CobrarSaldo({ c, elegidos, saldo }) {
+  const [medios, setMedios] = useState(null)
+  const [editando, setEditando] = useState(false)
+  const [borrador, setBorrador] = useState('')
+  const [ver, setVer] = useState(false)
+  useEffect(() => {
+    supabase.from('ajustes').select('valor').eq('clave', 'medios_pago').maybeSingle().then(({ data }) => setMedios(data?.valor || ''))
+  }, [])
+  if (medios === null) return null
+  const faltan = !medios || medios.includes('[')
+  const texto = mensajeCobro(c, elegidos, saldo, medios || MEDIOS_EJEMPLO)
+  const tel = String(c?.telefono || '').replace(/\D/g, '')
+  const telWa = tel.length === 10 ? '57' + tel : tel
+
+  async function guardar() {
+    await supabase.from('ajustes').upsert({ clave: 'medios_pago', valor: borrador.trim() })
+    setMedios(borrador.trim()); setEditando(false)
+  }
+
+  if (editando) return (
+    <div className='rounded-lg border border-gray-200 p-3 space-y-2'>
+      <label htmlFor='medios' className='text-sm font-semibold block'>Medios de pago (salen en el mensaje)</label>
+      <textarea id='medios' rows={7} className='w-full text-sm' value={borrador} onChange={e => setBorrador(e.target.value)} />
+      <p className='text-xs text-gray-500'>Cambia lo que está entre [corchetes] por tus datos. Los *asteriscos* salen en negrilla en WhatsApp.</p>
+      <div className='flex gap-2'><button className='btn btn-primary flex-1' onClick={guardar}>Guardar</button><button className='btn' onClick={() => setEditando(false)}>Cancelar</button></div>
+    </div>
+  )
+
+  return (
+    <div className='space-y-2'>
+      {faltan && <p className='text-xs text-amber-700'>⚠ Antes del primer envío, pon tus datos de pago: <button className='underline font-semibold' onClick={() => { setBorrador(medios || MEDIOS_EJEMPLO); setEditando(true) }}>Editar medios de pago</button></p>}
+      <div className='flex gap-2'>
+        {telWa ? (
+          <a className={`btn flex-1 text-center ${faltan ? 'opacity-50 pointer-events-none' : ''}`} style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }}
+            href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto)}`} target='_blank' rel='noreferrer'>💬 Cobrar saldo por WhatsApp</a>
+        ) : <p className='text-sm text-gray-500 flex-1'>El cliente no tiene teléfono registrado.</p>}
+        <button type='button' className='btn' onClick={() => setVer(!ver)}>{ver ? 'Ocultar' : 'Ver mensaje'}</button>
+      </div>
+      {ver && (
+        <div className='rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-2'>
+          <pre className='whitespace-pre-wrap text-xs font-sans'>{texto}</pre>
+          <div className='flex gap-3 text-xs'>
+            <button className='underline text-gray-600' onClick={() => navigator.clipboard?.writeText(texto)}>Copiar</button>
+            <button className='underline text-gray-600' onClick={() => { setBorrador(medios || MEDIOS_EJEMPLO); setEditando(true) }}>Editar medios de pago</button>
+          </div>
         </div>
       )}
     </div>
