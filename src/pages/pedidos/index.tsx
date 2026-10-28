@@ -354,6 +354,8 @@ function ModalEditar({ pedido, onClose, onGuardado }: { pedido: Pedido, onClose:
   const [cl, setCl] = useState<any>({ nombre: c.nombre || '', cedula: c.cedula || '', telefono: c.telefono || '', email: c.email || '', direccion: c.direccion || '', ciudad: c.ciudad || '' })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hecho, setHecho] = useState<any>(null)
+  const [correo, setCorreo] = useState('')
   useEffect(() => {
     supabase.from('productos').select('referencia').order('categoria').order('referencia').then(({ data }) => setProductos(data || []))
     supabase.from('materiales').select('nombre').eq('unidad', 'metro').order('nombre').then(({ data }) => setTelas(data || []))
@@ -383,7 +385,63 @@ function ModalEditar({ pedido, onClose, onGuardado }: { pedido: Pedido, onClose:
     const detalle = [...cambiosP.map(k => `${ETIQ[k] || k}: ${antes[k] ?? '—'} → ${nuevo[k] ?? '—'}`), ...cambiosC.map(k => `${ETIQ[k] || k} del cliente`)].join('; ')
     await supabase.from('historial_estados').insert({ pedido_id: p.id, estado_anterior: p.estado, estado_nuevo: p.estado, nota: `Editado: ${detalle}`.slice(0, 900) })
     setGuardando(false)
-    onGuardado()
+    setHecho({ cambiosP, cambiosC, nuevo })
+  }
+
+  // Avisar al cliente que se corrigió su pedido
+  const MESES_C = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+  const fLarga = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return `${d} de ${MESES_C[m - 1]}` }
+  const VISIBLES: Record<string, (v: any) => string> = {
+    tipo_sofa: v => `Producto: ${v}`, material: v => `Tela: ${v}`, cantidad: v => `Cantidad: ${v}`,
+    precio_venta: v => `Valor total: $${Math.round(Number(v)).toLocaleString('es-CO')}`, fecha_entrega: v => `Fecha de entrega: ${fLarga(v)}`,
+    observaciones: v => `Detalles: ${v}`,
+  }
+  const VIS_C: Record<string, string> = { nombre: 'Nombre', cedula: 'Documento', telefono: 'Teléfono', email: 'Correo', direccion: 'Dirección de entrega', ciudad: 'Ciudad' }
+  function mensajeWa() {
+    if (!hecho) return ''
+    const lineas = [...hecho.cambiosP.filter((k: string) => VISIBLES[k]).map((k: string) => '• ' + VISIBLES[k](hecho.nuevo[k])), ...hecho.cambiosC.map((k: string) => `• ${VIS_C[k]}: ${cl[k]}`)]
+    return ['♛ *MR. CHESTER* ♛', '', `Hola, ${String(cl.nombre || '').trim().split(/\s+/)[0]} 👋`, '', `Te confirmamos que actualizamos los datos de tu pedido *${p.grupo || p.numero}*:`, ...lineas, '',
+      cl.email ? 'También te enviamos a tu correo el comprobante actualizado.' : '', 'Si ves algo que no esté bien, escríbenos por aquí y lo corregimos. 🙌', '*Equipo Mr. Chester*'].filter((x, i, a) => !(x === '' && a[i - 1] === '')).join('\n')
+  }
+  async function reenviarCorreo() {
+    setCorreo('enviando')
+    const g = p.grupo || p.numero
+    const { data: lista } = await supabase.from('pedidos').select('*').or(`grupo.eq.${g},numero.eq.${g}`).neq('estado', 'cancelado').order('numero')
+    const items = (lista || [p]).map((x: any) => x.id === p.id ? { ...x, ...hecho.nuevo } : x)
+    const primero = items[0]
+    const resumen = { ...primero, numero: g, precio_venta: items.reduce((a: number, x: any) => a + Number(x.precio_venta || 0), 0), abono: items.reduce((a: number, x: any) => a + Number(x.abono || 0), 0) }
+    const { data: cli } = await supabase.from('clientes').select('*').eq('id', p.cliente_id).single()
+    try {
+      const r = await fetch('/api/enviar-confirmacion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pedido: resumen, cliente: cli, items, corregido: true }) })
+      const j = await r.json().catch(() => ({}))
+      const ok = !!j.cliente_ok
+      setCorreo(ok ? 'ok' : 'error')
+      await supabase.from('historial_estados').insert({ pedido_id: p.id, estado_anterior: p.estado, estado_nuevo: p.estado, nota: ok ? `Comprobante actualizado enviado a ${cli?.email}` : `No se pudo enviar el comprobante actualizado: ${j.error || 'sin detalle'}` })
+    } catch (e) { setCorreo('error') }
+  }
+
+  if (hecho) {
+    const tel = String(cl.telefono || '').replace(/\D/g, '')
+    const telWa = tel.length === 10 ? '57' + tel : tel
+    const visibles = hecho.cambiosP.some((k: string) => VISIBLES[k]) || hecho.cambiosC.length > 0
+    return (
+      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onGuardado}>
+        <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4" onClick={e => e.stopPropagation()} role="dialog" aria-label="Pedido guardado">
+          <h3 className="font-semibold text-green-700">✓ {p.numero} guardado</h3>
+          {visibles ? <>
+            <p className="text-sm text-gray-600">¿Le avisas al cliente que se corrigió su pedido?</p>
+            {telWa && <a className="btn w-full text-center block" style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }} href={`https://wa.me/${telWa}?text=${encodeURIComponent(mensajeWa())}`} target="_blank" rel="noreferrer">💬 Avisar por WhatsApp</a>}
+            {cl.email ? (
+              <button className="btn w-full justify-center" disabled={correo === 'enviando' || correo === 'ok'} onClick={reenviarCorreo}>
+                {correo === 'enviando' ? 'Enviando…' : correo === 'ok' ? `✓ Comprobante enviado a ${cl.email}` : correo === 'error' ? 'No se pudo enviar · reintentar' : '📧 Enviar comprobante actualizado por correo'}
+              </button>
+            ) : <p className="text-xs text-gray-500">El cliente no tiene correo registrado.</p>}
+            <details className="text-xs text-gray-500"><summary className="cursor-pointer">Ver el mensaje de WhatsApp</summary><pre className="whitespace-pre-wrap font-sans mt-2 bg-gray-50 border border-gray-200 rounded-lg p-2">{mensajeWa()}</pre></details>
+          </> : <p className="text-sm text-gray-600">Los cambios son internos (canal, prioridad, factura o fecha del pedido); no hace falta avisarle al cliente.</p>}
+          <button className="btn w-full justify-center" onClick={onGuardado}>Cerrar</button>
+        </div>
+      </div>
+    )
   }
 
   return (
