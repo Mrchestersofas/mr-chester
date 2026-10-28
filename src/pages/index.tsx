@@ -352,6 +352,7 @@ function FilaMeta({ r }: { r: any }) {
 function MetaDelDia() {
   const hoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10)
   const [filas, setFilas] = useState<any[] | null>(null)
+  const [verAtrasados, setVerAtrasados] = useState(false)
 
   useEffect(() => {
     const desde = new Date(Date.now() - 5 * 3600 * 1000 - 30 * 864e5).toISOString().slice(0, 10)
@@ -379,9 +380,12 @@ function MetaDelDia() {
   return (
     <div className='space-y-3 mb-6'>
       {atrasados.length > 0 && (
-        <div className='card border-red-300 bg-red-50'>
-          <p className='text-sm font-semibold text-red-800 mb-1'>⚠️ {atrasados.length} sofá{atrasados.length > 1 ? 's' : ''} de días anteriores sin terminar</p>
-          {Object.entries(porDia).sort((a, b) => b[0].localeCompare(a[0])).map(([dd, lista]) => (
+        <div className='card border-red-300 bg-red-50 py-3'>
+          <button type='button' className='w-full flex justify-between items-center text-left' onClick={() => setVerAtrasados(!verAtrasados)} aria-expanded={verAtrasados}>
+            <span className='text-sm font-semibold text-red-800'>⚠️ {atrasados.length} sofá{atrasados.length > 1 ? 's' : ''} de días anteriores sin terminar</span>
+            <span className='text-xs font-semibold text-red-700'>{verAtrasados ? 'Ocultar ▲' : 'Ver ▼'}</span>
+          </button>
+          {verAtrasados && Object.entries(porDia).sort((a, b) => b[0].localeCompare(a[0])).map(([dd, lista]) => (
             <div key={dd} className='mt-2'>
               <p className='text-xs font-semibold uppercase tracking-wide text-red-700 capitalize'>{fDia(dd)}</p>
               <div className='bg-white rounded-lg px-3 mt-1'>{lista.map(r => <FilaMeta key={r.id} r={r} />)}</div>
