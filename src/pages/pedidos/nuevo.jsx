@@ -126,8 +126,8 @@ export default function NuevoPedido() {
         ultimo = d
       }
     }
-    const listo = sumarHabiles(ultimo, 1)
-    return { fabrica: ultimo, entrega: sumarHabiles(listo, esBogota(ciudadCliente) ? 1 : 5) }
+    // Se fabrica el día del cupo y se despacha el día hábil siguiente (esa es la fecha que se le promete)
+    return { fabrica: ultimo, entrega: sumarHabiles(ultimo, 1) }
   })()
 
   useEffect(() => {
@@ -402,7 +402,7 @@ export default function NuevoPedido() {
               <div className='rounded-lg bg-purple-50 border border-purple-100 p-3 text-sm'>
                 <p>Primer cupo libre en fábrica: <b>{fCorta(sugerida.fabrica)}</b></p>
                 <p className='text-lg font-semibold text-purple-800 mt-1'>Entrega: {fechaLarga(sugerida.entrega)}</p>
-                <p className='text-xs text-gray-500 mt-1'>{esBogota(ciudadCliente) ? 'Bogotá: 1 día hábil después de terminado.' : 'Fuera de Bogotá: hasta 5 días hábiles después de terminado.'} Se recalcula al elegir los productos y la ciudad.</p>
+                <p className='text-xs text-gray-500 mt-1'>{esBogota(ciudadCliente) ? 'Bogotá: se entrega el día del despacho.' : 'Fuera de Bogotá: es la fecha de despacho; la transportadora tarda de 2 a 4 días hábiles más.'} Se recalcula al elegir los productos y la ciudad.</p>
               </div>
             )
           )}
