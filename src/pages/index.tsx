@@ -6,6 +6,7 @@ import { AlertTriangle, Package, ClipboardList, Wrench, DollarSign, Plus, Shoppi
 import { format, differenceInDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { ETAPAS } from '@/lib/programacion'
+import { diaAnteriorHabil } from '@/lib/planificador'
 
 const ETAPA_LABEL: Record<string, string> = {
   cola: 'En cola',
@@ -324,6 +325,87 @@ function BuscadorPedido() {
   )
 }
 
+/* ---------- Meta de producción: lo programado para hoy y en qué etapa va cada uno ---------- */
+const LISTOS = ['terminado', 'control_calidad', 'despacho', 'completado']
+const DIAS_L = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const MESES_L = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+const fDia = (iso: string) => { const d = new Date(iso + 'T12:00:00Z'); return `${DIAS_L[d.getUTCDay()]} ${d.getUTCDate()} ${MESES_L[d.getUTCMonth()]}` }
+
+function FilaMeta({ r }: { r: any }) {
+  const et = r.etapa_actual
+  const listo = LISTOS.includes(et) || r.pedido?.estado === 'entregado'
+  const color = listo ? ETAPA_COLOR['terminado'] : ETAPA_COLOR[et] || ETAPA_COLOR['cola']
+  const n = Math.max(1, Number(r.pedido?.cantidad) || 1)
+  return (
+    <div className='flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 last:border-0'>
+      <div className='min-w-0'>
+        <p className='text-sm font-medium truncate'>{r.pedido.tipo_sofa}{n > 1 ? ` ×${n}` : ''} <span className='text-gray-400 font-normal'>· {r.pedido.numero}</span></p>
+        <p className='text-xs text-gray-500 truncate'>{r.pedido.cliente?.nombre || ''}{r.pedido.material ? ` · ${r.pedido.material}` : ''}</p>
+      </div>
+      <span className={`flex-none text-xs px-2 py-1 rounded-full font-semibold ${listo ? 'bg-green-100 text-green-800' : color.bg + ' ' + color.text}`}>
+        {listo ? '✓ Terminado' : ETAPA_LABEL[et] || et}
+      </span>
+    </div>
+  )
+}
+
+function MetaDelDia() {
+  const hoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10)
+  const [filas, setFilas] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    const desde = new Date(Date.now() - 5 * 3600 * 1000 - 30 * 864e5).toISOString().slice(0, 10)
+    supabase.from('programacion_produccion')
+      .select('id, etapa_actual, dia_produccion, pedido:pedidos(numero, tipo_sofa, material, cantidad, estado, fecha_entrega, cliente:clientes(nombre))')
+      .gte('dia_produccion', desde).lte('dia_produccion', hoy).order('dia_produccion')
+      .then(({ data }) => setFilas((data || []).filter((r: any) => r.pedido && r.pedido.estado !== 'cancelado')))
+  }, [])
+
+  if (!filas) return <div className='card mb-6 text-sm text-gray-400'>Calculando la meta de hoy…</div>
+  const n = (r: any) => Math.max(1, Number(r.pedido?.cantidad) || 1)
+  const esListo = (r: any) => LISTOS.includes(r.etapa_actual) || r.pedido?.estado === 'entregado'
+  // Día en que debía fabricarse según la fecha prometida (1 día hábil antes); si ya pasó, está atrasado
+  const debia = (r: any) => { const fe = String(r.pedido?.fecha_entrega || '').slice(0, 10); const d = fe ? diaAnteriorHabil(fe) : r.dia_produccion; return d < r.dia_produccion ? d : r.dia_produccion }
+  const deHoy = filas.filter(r => r.dia_produccion === hoy && debia(r) >= hoy)
+  const meta = deHoy.reduce((a, r) => a + n(r), 0)
+  const logrados = deHoy.filter(esListo).reduce((a, r) => a + n(r), 0)
+  const pct = meta ? Math.round(logrados / meta * 100) : 0
+  const atrasados = filas.filter(r => (r.dia_produccion < hoy || debia(r) < hoy) && !esListo(r))
+  const porDia: Record<string, any[]> = {}
+  atrasados.forEach(r => { const k = debia(r); (porDia[k] = porDia[k] || []).push(r) })
+  const color = !meta ? 'text-gray-500' : pct >= 100 ? 'text-green-700' : pct >= 60 ? 'text-amber-600' : 'text-red-600'
+  const barra = pct >= 100 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500'
+
+  return (
+    <div className='space-y-3 mb-6'>
+      {atrasados.length > 0 && (
+        <div className='card border-red-300 bg-red-50'>
+          <p className='text-sm font-semibold text-red-800 mb-1'>⚠️ {atrasados.length} sofá{atrasados.length > 1 ? 's' : ''} de días anteriores sin terminar</p>
+          {Object.entries(porDia).sort((a, b) => b[0].localeCompare(a[0])).map(([dd, lista]) => (
+            <div key={dd} className='mt-2'>
+              <p className='text-xs font-semibold uppercase tracking-wide text-red-700 capitalize'>{fDia(dd)}</p>
+              <div className='bg-white rounded-lg px-3 mt-1'>{lista.map(r => <FilaMeta key={r.id} r={r} />)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className='card'>
+        <div className='flex items-start justify-between gap-3 mb-2'>
+          <div>
+            <p className='text-xs font-semibold text-gray-500 uppercase tracking-wide'>🎯 Meta de producción · <span className='capitalize'>{fDia(hoy)}</span></p>
+            <p className='text-sm text-gray-600 mt-1'>{meta ? <><b>{logrados}</b> de <b>{meta}</b> terminados</> : 'Hoy no hay sofás programados.'}</p>
+          </div>
+          <div className={`text-3xl font-bold tabular-nums ${color}`}>{meta ? `${pct}%` : '—'}</div>
+        </div>
+        {meta > 0 && <div className='h-3 rounded-full bg-gray-100 overflow-hidden mb-3'><div className={`h-full ${barra}`} style={{ width: Math.min(100, pct) + '%' }} /></div>}
+        {deHoy.map(r => <FilaMeta key={r.id} r={r} />)}
+        {meta > 0 && pct < 100 && <p className='text-xs text-gray-500 mt-2'>Cuenta como logrado cuando en Producción o en el Taller se pasa a <b>Terminado</b>.</p>}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   // Compras de hoy (módulo nuevo de Compras: proveedores con días fijos)
@@ -388,6 +470,9 @@ export default function Dashboard() {
           <Plus size={15} /> Nuevo pedido
         </Link>
       </div>
+
+      {/* Meta de producción del día */}
+      <MetaDelDia />
 
       {/* Buscador de pedidos */}
       <BuscadorPedido />
