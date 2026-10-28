@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, Pedido, OrderStatus } from '@/lib/supabase'
 import { EstadoBadge, PrioridadBadge } from '@/components/Badges'
 import Link from 'next/link'
-import { Plus, Search, Trash2, MessageSquarePlus } from 'lucide-react'
+import { Plus, Search, Trash2, MessageSquarePlus, Pencil } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 
 const ESTADOS: { value: string; label: string }[] = [
@@ -34,6 +34,7 @@ export default function Pedidos() {
   const [eliminando, setEliminando] = useState<string | null>(null)
   const [confirmar, setConfirmar] = useState<Pedido | null>(null)
   const [novedadesDe, setNovedadesDe] = useState<Pedido | null>(null)
+  const [editando, setEditando] = useState<Pedido | null>(null)
 
   async function cargar() {
     setLoading(true)
@@ -80,6 +81,7 @@ export default function Pedidos() {
     <div className="p-6 max-w-6xl mx-auto">
 
       {novedadesDe && <ModalNovedades pedido={novedadesDe} onClose={() => setNovedadesDe(null)} />}
+      {editando && <ModalEditar pedido={editando} onClose={() => setEditando(null)} onGuardado={() => { setEditando(null); cargar() }} />}
 
       {confirmar && (
         <div
@@ -179,7 +181,7 @@ export default function Pedidos() {
                 return (
                   <tr key={p.id}>
                     <td>
-                      <span className="font-medium text-purple-700">{p.numero}</span>
+                      <button type="button" onClick={() => setEditando(p)} className="font-medium text-purple-700 hover:underline">{p.numero}</button>
                       {(p as any).grupo && tamGrupo[(p as any).grupo] > 1 && (
                         <div className="text-xs text-gray-500 whitespace-nowrap">
                           {(p as any).grupo === p.numero ? `Compra de ${tamGrupo[(p as any).grupo]} productos` : `Va con ${(p as any).grupo}`}
@@ -223,6 +225,13 @@ export default function Pedidos() {
                       )}
                     </td>
                     <td className="whitespace-nowrap">
+                      <button
+                        onClick={() => setEditando(p)}
+                        className="text-gray-400 hover:text-purple-600 transition-colors p-1 rounded mr-1"
+                        title="Editar pedido"
+                      >
+                        <Pencil size={15} />
+                      </button>
                       <button
                         onClick={() => setNovedadesDe(p)}
                         className="text-gray-400 hover:text-purple-600 transition-colors p-1 rounded mr-1"
@@ -320,6 +329,126 @@ function ModalNovedades({ pedido, onClose }: { pedido: Pedido, onClose: () => vo
             <button onClick={copiarLink} className="btn flex-1 justify-center">{copiado ? '✓ Copiado' : 'Copiar link'}</button>
             {tel && <a className="btn flex-1 justify-center" href={`https://wa.me/${telWa}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Enviar por WhatsApp</a>}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* Editar un pedido: producto, tela, precio, fechas, canal y datos del cliente */
+const CANALES_ED: [string, string][] = [['tienda_85', 'Tienda 85'], ['whatsapp', 'WhatsApp'], ['instagram', 'Instagram'], ['falabella', 'Falabella'], ['web', 'Página web']]
+const ETIQ: Record<string, string> = { tipo_sofa: 'producto', material: 'tela', cantidad: 'cantidad', precio_venta: 'precio', fecha_pedido: 'fecha del pedido', fecha_entrega: 'fecha de entrega', canal: 'canal', prioridad: 'prioridad', observaciones: 'observaciones', factura_iva: 'factura con IVA', nombre: 'nombre', cedula: 'documento', telefono: 'teléfono', email: 'correo', direccion: 'dirección', ciudad: 'ciudad' }
+
+function L({ t, id, children }: any) { return <div><label htmlFor={id} className="text-xs text-gray-500 mb-1 block">{t}</label>{children}</div> }
+
+function ModalEditar({ pedido, onClose, onGuardado }: { pedido: Pedido, onClose: () => void, onGuardado: () => void }) {
+  const p: any = pedido
+  const c: any = p.cliente || {}
+  const [productos, setProductos] = useState<any[]>([])
+  const [telas, setTelas] = useState<any[]>([])
+  const [f, setF] = useState<any>({
+    tipo_sofa: p.tipo_sofa || '', material: p.material || '', cantidad: p.cantidad || 1, precio_venta: String(Math.round(Number(p.precio_venta || 0))),
+    fecha_pedido: String(p.fecha_pedido || '').slice(0, 10), fecha_entrega: String(p.fecha_entrega || '').slice(0, 10),
+    canal: p.canal || '', prioridad: p.prioridad || 'normal', observaciones: p.observaciones || '', factura_iva: !!p.factura_iva,
+  })
+  const [cl, setCl] = useState<any>({ nombre: c.nombre || '', cedula: c.cedula || '', telefono: c.telefono || '', email: c.email || '', direccion: c.direccion || '', ciudad: c.ciudad || '' })
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    supabase.from('productos').select('referencia').order('categoria').order('referencia').then(({ data }) => setProductos(data || []))
+    supabase.from('materiales').select('nombre').eq('unidad', 'metro').order('nombre').then(({ data }) => setTelas(data || []))
+  }, [])
+  const set = (k: string, v: any) => setF((x: any) => ({ ...x, [k]: v }))
+  const setC = (k: string, v: any) => setCl((x: any) => ({ ...x, [k]: v }))
+
+  async function guardar() {
+    if (!f.tipo_sofa.trim()) { setError('Escribe el producto.'); return }
+    if (!(Number(f.precio_venta) > 0)) { setError('El precio debe ser mayor a 0.'); return }
+    if (!f.fecha_entrega) { setError('Pon la fecha de entrega.'); return }
+    if (Number(f.precio_venta) < Number(p.abono || 0)) { setError(`El precio no puede ser menor a lo que ya abonó (${'$' + Math.round(Number(p.abono)).toLocaleString('es-CO')}).`); return }
+    setGuardando(true); setError(null)
+    const nuevo: any = { ...f, cantidad: Number(f.cantidad) || 1, precio_venta: Number(f.precio_venta), canal: f.canal || null }
+    const antes: any = { ...p, precio_venta: Number(p.precio_venta), cantidad: Number(p.cantidad), fecha_pedido: String(p.fecha_pedido || '').slice(0, 10), fecha_entrega: String(p.fecha_entrega || '').slice(0, 10), factura_iva: !!p.factura_iva }
+    const cambiosP = Object.keys(nuevo).filter(k => String(nuevo[k] ?? '') !== String(antes[k] ?? ''))
+    const cambiosC = Object.keys(cl).filter(k => String(cl[k] ?? '') !== String(c[k] ?? ''))
+    if (!cambiosP.length && !cambiosC.length) { onClose(); return }
+    if (cambiosP.length) {
+      const { error: e } = await supabase.from('pedidos').update(Object.fromEntries(cambiosP.map(k => [k, nuevo[k]]))).eq('id', p.id)
+      if (e) { setError('No se pudo guardar: ' + e.message); setGuardando(false); return }
+    }
+    if (cambiosC.length && p.cliente_id) {
+      const { error: e } = await supabase.from('clientes').update(Object.fromEntries(cambiosC.map(k => [k, cl[k].trim ? cl[k].trim() : cl[k]]))).eq('id', p.cliente_id)
+      if (e) { setError('No se pudo guardar el cliente: ' + e.message); setGuardando(false); return }
+    }
+    const detalle = [...cambiosP.map(k => `${ETIQ[k] || k}: ${antes[k] ?? '—'} → ${nuevo[k] ?? '—'}`), ...cambiosC.map(k => `${ETIQ[k] || k} del cliente`)].join('; ')
+    await supabase.from('historial_estados').insert({ pedido_id: p.id, estado_anterior: p.estado, estado_nuevo: p.estado, nota: `Editado: ${detalle}`.slice(0, 900) })
+    setGuardando(false)
+    onGuardado()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
+      <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()} role="dialog" aria-label="Editar pedido">
+        <div className="flex justify-between items-start gap-3">
+          <div>
+            <h3 className="font-semibold text-gray-800">Editar {p.numero}</h3>
+            <p className="text-xs text-gray-500">Los cambios quedan anotados en el historial del pedido.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-2xl leading-none" aria-label="Cerrar">×</button>
+        </div>
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Producto</p>
+        <L t="Referencia" id="e-ref">
+          <input id="e-ref" list="e-refs" value={f.tipo_sofa} onChange={e => set('tipo_sofa', e.target.value)} />
+          <datalist id="e-refs">{productos.map(x => <option key={x.referencia} value={x.referencia} />)}</datalist>
+        </L>
+        <L t="Tela / material" id="e-tela">
+          <input id="e-tela" list="e-telas" value={f.material} onChange={e => set('material', e.target.value)} />
+          <datalist id="e-telas">{telas.map(x => <option key={x.nombre} value={x.nombre} />)}</datalist>
+        </L>
+        <div className="grid grid-cols-2 gap-3">
+          <L t="Cantidad" id="e-cant"><input id="e-cant" type="number" min="1" inputMode="numeric" value={f.cantidad} onChange={e => set('cantidad', e.target.value)} /></L>
+          <L t="Precio total COP" id="e-precio"><input id="e-precio" inputMode="numeric" value={f.precio_venta} onChange={e => set('precio_venta', e.target.value.replace(/\D/g, ''))} /></L>
+        </div>
+        <p className="text-xs text-gray-500 -mt-2">Abonado: ${Math.round(Number(p.abono || 0)).toLocaleString('es-CO')}. Los pagos se registran en Despachos.</p>
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 pt-1">Fechas y canal</p>
+        <div className="grid grid-cols-2 gap-3">
+          <L t="Fecha del pedido" id="e-fp"><input id="e-fp" type="date" value={f.fecha_pedido} onChange={e => set('fecha_pedido', e.target.value)} /></L>
+          <L t="Fecha de entrega" id="e-fe"><input id="e-fe" type="date" value={f.fecha_entrega} onChange={e => set('fecha_entrega', e.target.value)} /></L>
+        </div>
+        {f.fecha_entrega !== String(p.fecha_entrega || '').slice(0, 10) && <p className="text-xs text-amber-700 -mt-2">Para avisarle al cliente la nueva fecha (y revisar que haya cupo), es mejor hacerlo desde Atención al cliente.</p>}
+        <div className="grid grid-cols-2 gap-3">
+          <L t="Canal" id="e-canal">
+            <select id="e-canal" value={f.canal} onChange={e => set('canal', e.target.value)}>
+              <option value="">Sin canal</option>
+              {CANALES_ED.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </L>
+          <L t="Prioridad" id="e-prio">
+            <select id="e-prio" value={f.prioridad} onChange={e => set('prioridad', e.target.value)}>
+              <option value="normal">Normal</option><option value="alta">Alta</option><option value="urgente">Urgente</option>
+            </select>
+          </L>
+        </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" style={{ width: 'auto' }} checked={f.factura_iva} onChange={e => set('factura_iva', e.target.checked)} /> Factura con IVA</label>
+        <L t="Observaciones" id="e-obs"><textarea id="e-obs" rows={2} value={f.observaciones} onChange={e => set('observaciones', e.target.value)} /></L>
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 pt-1">Cliente</p>
+        <L t="Nombre" id="e-nom"><input id="e-nom" value={cl.nombre} onChange={e => setC('nombre', e.target.value)} /></L>
+        <div className="grid grid-cols-2 gap-3">
+          <L t="Cédula / NIT" id="e-ced"><input id="e-ced" inputMode="numeric" value={cl.cedula} onChange={e => setC('cedula', e.target.value)} /></L>
+          <L t="Teléfono" id="e-tel"><input id="e-tel" inputMode="tel" value={cl.telefono} onChange={e => setC('telefono', e.target.value)} /></L>
+        </div>
+        <L t="Correo" id="e-mail"><input id="e-mail" type="email" value={cl.email} onChange={e => setC('email', e.target.value)} /></L>
+        <L t="Dirección" id="e-dir"><input id="e-dir" value={cl.direccion} onChange={e => setC('direccion', e.target.value)} /></L>
+        <L t="Ciudad" id="e-ciu"><input id="e-ciu" value={cl.ciudad} onChange={e => setC('ciudad', e.target.value)} /></L>
+        <p className="text-xs text-gray-500 -mt-2">Los datos del cliente se cambian en todos sus pedidos.</p>
+
+        {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+        <div className="flex gap-3 pt-1">
+          <button className="btn flex-1" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary flex-1 justify-center" disabled={guardando} onClick={guardar}>{guardando ? 'Guardando…' : 'Guardar cambios'}</button>
         </div>
       </div>
     </div>
