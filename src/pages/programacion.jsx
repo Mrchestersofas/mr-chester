@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre, primerDiaPlan } from '@/lib/planificador'
 
@@ -75,7 +75,10 @@ export default function Programacion() {
             </>
           )}
         </div>
-      ) : tab === 'mes' ? <Mes plan={plan} onReprog={setReprog} />
+      ) : tab === 'mes' ? <Mes plan={plan} usados={usados} onReprog={setReprog} onMover={async (p, d) => {
+          await supabase.from('programacion_produccion').update({ fijo: true, dia_produccion: d }).eq('id', p.id)
+          await cargar()
+        }} />
         : tab === 'calendario' ? <Calendario plan={plan} usados={usados} onReprog={setReprog} />
         : <Recaudo plan={plan} />}
 
@@ -186,8 +189,62 @@ function grupoEtapa(et, estadoPedido) {
 }
 function corto(nombre) { const w = String(nombre || 'Sin cliente').trim().split(/\s+/); return w.slice(0, 2).join(' ') }
 
-function Mes({ plan, onReprog }) {
+function Mes({ plan, usados, onReprog, onMover }) {
   const hoy = hoyColombia()
+  const primerDia = primerDiaPlan(hoy)
+  // Arrastrar con el dedo o el mouse: mantener presionado un pedido en cola y soltarlo en otro día
+  const [drag, setDrag] = useState(null) // { it, x, y, sobre }
+  const [moviendo, setMoviendo] = useState(null)
+  const timer = useRef(null)
+  const inicio0 = useRef(null)
+  const recienArrastrado = useRef(false)
+  const dragRef = useRef(null)
+  dragRef.current = drag
+
+  useEffect(() => {
+    // Mientras se arrastra, el dedo no debe mover la pantalla
+    const bloquear = e => { if (dragRef.current) e.preventDefault() }
+    document.addEventListener('touchmove', bloquear, { passive: false })
+    return () => document.removeEventListener('touchmove', bloquear)
+  }, [])
+
+  const diaEn = (x, y) => document.elementFromPoint(x, y)?.closest('[data-dia]')?.getAttribute('data-dia') || null
+  const sePuede = d => d && d >= primerDia && capacidad(d) > 0
+
+  function presionar(e, it) {
+    if (!it.p || it.p.etapa_actual !== 'cola' || moviendo) return
+    const { clientX: x, clientY: y } = e
+    inicio0.current = { x, y }
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => { setDrag({ it, x, y, sobre: null }); if (navigator.vibrate) navigator.vibrate(30) }, e.pointerType === 'mouse' ? 120 : 350)
+  }
+  function moverPuntero(e) {
+    if (!drag) {
+      const o = inicio0.current
+      if (o && Math.hypot(e.clientX - o.x, e.clientY - o.y) > 10) { clearTimeout(timer.current); inicio0.current = null }
+      return
+    }
+    setDrag(d => ({ ...d, x: e.clientX, y: e.clientY, sobre: diaEn(e.clientX, e.clientY) }))
+  }
+  async function soltar(e) {
+    clearTimeout(timer.current); inicio0.current = null
+    if (!drag) return
+    const d = diaEn(e.clientX, e.clientY)
+    const { it } = drag
+    setDrag(null)
+    recienArrastrado.current = true
+    setTimeout(() => { recienArrastrado.current = false }, 400)
+    const p = it.p
+    if (!d || d === p.dia_inicio) return
+    if (!sePuede(d)) { alert(d < primerDia ? 'No se puede programar en un día que ya pasó.' : 'Ese día no se trabaja.'); return }
+    const mio = d >= p.dia_inicio && d <= p.dia_fin ? p.cupos : 0
+    const libre = capacidad(d) - (usados[d] || 0) + mio
+    if (libre + 1e-9 < p.cupos && !confirm(`El ${f(d)} ya está lleno. ¿Programar ${p.pedido.numero} igual?`)) return
+    setMoviendo(p.id)
+    await onMover(p, d)
+    setMoviendo(null)
+  }
+  function cancelar() { clearTimeout(timer.current); inicio0.current = null; setDrag(null) }
   const [ancla, setAncla] = useState(hoy.slice(0, 7))
   const [historia, setHistoria] = useState([])
   const [y, m] = ancla.split('-').map(Number)
@@ -217,7 +274,13 @@ function Mes({ plan, onReprog }) {
   const mover = n => { const t = new Date(Date.UTC(y, m - 1 + n, 1)); setAncla(t.toISOString().slice(0, 7)) }
 
   return (
-    <div>
+    <div onPointerMove={moverPuntero} onPointerUp={soltar} onPointerCancel={cancelar} onPointerLeave={e => e.pointerType === 'mouse' && cancelar()}>
+      {drag && (
+        <div className='fixed z-50 pointer-events-none px-2 py-1 rounded-lg shadow-lg bg-gray-900 text-white text-xs font-semibold'
+          style={{ left: drag.x + 12, top: drag.y - 34 }}>
+          {drag.it.numero} · {corto(drag.it.nombre)}{drag.sobre ? ` → ${f(drag.sobre)}` : ''}
+        </div>
+      )}
       <div className='flex items-center justify-between mb-3'>
         <button className='btn text-sm' onClick={() => mover(-1)}>‹ Anterior</button>
         <div className='font-semibold uppercase tracking-wide'>{MESES_L[m - 1]} {y}</div>
@@ -245,15 +308,18 @@ function Mes({ plan, onReprog }) {
                   const cap = capacidad(d)
                   const items = fuera ? [] : delDia(d)
                   return (
-                    <td key={d} className={`align-top border border-gray-300 p-1 h-24 ${fuera || cap === 0 ? 'bg-gray-100' : 'bg-white'} ${d === hoy ? 'ring-2 ring-inset ring-gray-900' : ''}`}>
+                    <td key={d} data-dia={fuera ? undefined : d} className={`align-top border border-gray-300 p-1 h-24 ${drag && drag.sobre === d ? (sePuede(d) ? 'bg-purple-100' : 'bg-red-50') : fuera || cap === 0 ? 'bg-gray-100' : 'bg-white'} ${d === hoy ? 'ring-2 ring-inset ring-gray-900' : ''}`}>
                       <div className={`text-right text-[10px] mb-0.5 ${fuera ? 'text-gray-300' : 'text-gray-500'}`}>
                         {FESTIVOS.has(d) && !fuera ? 'Festivo · ' : ''}{Number(d.slice(8))}
                       </div>
                       <div className='space-y-0.5'>
                         {items.map(it => (
                           <button key={it.id} type='button' title={`${it.numero} · ${it.modelo}`}
-                            onClick={() => it.p && it.p.etapa_actual === 'cola' && onReprog(it.p)}
-                            className={`block w-full text-left truncate px-1 py-0.5 rounded border ${COLOR_ETAPA[it.g]} ${it.tarde ? 'border-2 border-red-500' : ''}`}>
+                            onClick={() => !recienArrastrado.current && it.p && it.p.etapa_actual === 'cola' && onReprog(it.p)}
+                            onPointerDown={e => presionar(e, it)}
+                            onContextMenu={e => e.preventDefault()}
+                            style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none', touchAction: drag ? 'none' : 'auto' }}
+                            className={`block w-full text-left truncate px-1 py-0.5 rounded border ${COLOR_ETAPA[it.g]} ${it.tarde ? 'border-2 border-red-500' : ''} ${drag && drag.it.id === it.id ? 'opacity-30' : ''} ${moviendo === it.id ? 'animate-pulse' : ''} ${it.p && it.p.etapa_actual === 'cola' ? 'cursor-grab' : ''}`}>
                             {corto(it.nombre)}{it.fijo ? ' 📌' : ''}
                           </button>
                         ))}
@@ -266,7 +332,7 @@ function Mes({ plan, onReprog }) {
           </tbody>
         </table>
       </div>
-      <p className='text-xs text-gray-500 mt-2'>Toca un pedido en cola para reprogramarlo. Pasa el dedo o el mouse para ver número y modelo.</p>
+      <p className='text-xs text-gray-500 mt-2'>✋ <b>Para mover un pedido:</b> mantenlo presionado un momento y arrástralo con el dedo (o el mouse) al día que quieras. Queda fijo 📌 en ese día. También puedes tocarlo para ver los días con cupo.</p>
     </div>
   )
 }
