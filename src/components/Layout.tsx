@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   LayoutDashboard, ClipboardList, PlusCircle,
-  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText, CalendarDays, Truck, Wallet, LogOut, Target, MessageCircle, Landmark
+  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText, CalendarDays, Truck, Wallet, LogOut, Target, MessageCircle, Landmark, GraduationCap
 } from 'lucide-react'
 
 const navItems = [
@@ -25,14 +25,28 @@ const navItems = [
   { href: '/materiales',    label: 'Materiales',    icon: Package },
   { href: '/costos',        label: 'Costos',        icon: Calculator },
   { href: '/clientes',      label: 'Clientes',      icon: Users },
+  { href: '/capacitacion',  label: 'Capacitación',  icon: GraduationCap },
 ]
 
 // Quiénes pueden entrar al ERP. El usuario "joseph" usa su correo; los demás, usuario@envios.mrchester.com.co
 const USUARIOS: Record<string, string> = { joseph: 'josephtoledo@gmail.com', 'joséph': 'josephtoledo@gmail.com', 'josé': 'josephtoledo@gmail.com', jose: 'josephtoledo@gmail.com', monica: 'monica@envios.mrchester.com.co', 'mónica': 'monica@envios.mrchester.com.co' }
 const PERMITIDOS = ['josephtoledo@gmail.com', 'monica@envios.mrchester.com.co']
+// Los vendedores (tabla cap_equipo) solo ven estas páginas
+const PAGINAS_VENDEDOR = ['/capacitacion', '/cotizaciones']
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<any>(undefined)
+  const [vendedor, setVendedor] = useState<boolean | undefined>(undefined)
+  const router = useRouter()
+  const email = session?.user?.email
+  useEffect(() => {
+    if (!email) { setVendedor(undefined); return }
+    if (PERMITIDOS.includes(email)) { setVendedor(false); return }
+    supabase.from('cap_equipo').select('email').eq('email', email).maybeSingle().then(({ data }) => setVendedor(!!data))
+  }, [email])
+  useEffect(() => {
+    if (vendedor && !PAGINAS_VENDEDOR.includes(router.pathname)) router.replace('/capacitacion')
+  }, [vendedor, router.pathname])
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
@@ -40,8 +54,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [])
   if (session === undefined) return <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Cargando…</div>
   if (!session) return <LoginERP />
-  if (!PERMITIDOS.includes(session.user?.email)) return <SinAcceso />
-  return <Marco email={session.user.email}>{children}</Marco>
+  if (!PERMITIDOS.includes(email)) {
+    if (vendedor === undefined) return <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Cargando…</div>
+    if (!vendedor) return <SinAcceso />
+    if (!PAGINAS_VENDEDOR.includes(router.pathname)) return <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Cargando…</div>
+    return <Marco email={email} items={navItems.filter(n => PAGINAS_VENDEDOR.includes(n.href))}>{children}</Marco>
+  }
+  return <Marco email={email} items={navItems}>{children}</Marco>
 }
 
 function LoginERP() {
@@ -104,7 +123,7 @@ function CambiarClave({ cerrar }: { cerrar: () => void }) {
   )
 }
 
-function Marco({ children, email }: { children: React.ReactNode, email: string }) {
+function Marco({ children, email, items }: { children: React.ReactNode, email: string, items: typeof navItems }) {
   const router = useRouter()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [cambiando, setCambiando] = useState(false)
@@ -144,7 +163,7 @@ function Marco({ children, email }: { children: React.ReactNode, email: string }
           </div>
         </div>
         <nav className="flex-1 py-3">
-          {navItems.map(({ href, label, icon: Icon }) => (
+          {items.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
