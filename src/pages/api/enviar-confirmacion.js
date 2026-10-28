@@ -6,7 +6,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
-  const { pedido, cliente, items } = req.body
+  const { pedido, cliente, items, corregido } = req.body
   const varios = Array.isArray(items) && items.length > 1
   const pesosCO = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
 
@@ -218,7 +218,7 @@ export default async function handler(req, res) {
   const FROM_DOMINIO = process.env.RESEND_FROM || 'Mr. Chester Sofás <pedidos@envios.mrchester.com.co>'
   const FROM_PRUEBA = 'Mr. Chester Sofás <onboarding@resend.dev>'
   const COPIA = 'josephtoledo@gmail.com'
-  const subject = `Confirmación de pedido ${pedido.numero} — Mr. Chester Sofás`
+  const subject = corregido ? `Pedido ${pedido.numero} actualizado — Mr. Chester Sofás` : `Confirmación de pedido ${pedido.numero} — Mr. Chester Sofás`
 
   async function enviar(to, from) {
     try {
