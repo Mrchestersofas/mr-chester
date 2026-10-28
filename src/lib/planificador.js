@@ -2,10 +2,12 @@
 // Programación de fábrica por CUPOS diarios.
 // - Lunes a viernes: 3 cupos. Sábado: 2. Domingos y festivos: 0.
 // - Cupos por producto: sofá 1, esquinero 2, poltrona ½, puff ¼ (× cantidad).
-// - Se programa por fecha de entrega prometida (la más cercana primero).
+// - Regla: cada pedido se fabrica 1 día hábil ANTES de la fecha prometida al cliente (fecha de despacho).
+//   Si esa fecha ya pasó, se fabrica en el primer día disponible. Los cupos se muestran pero no mueven pedidos.
+// - Pedidos sin fecha prometida: primer cupo libre.
 // - Un pedido "fijo" (reprogramado a mano) se queda en su día.
-// - Listo = 1 día hábil después del último día de fabricación.
-// - Entrega: Bogotá 1 día hábil después de listo; fuera de Bogotá entre 3 y 5.
+// - Listo = el mismo día de fabricación. Despacho = 1 día hábil después.
+// - Entrega: Bogotá el día del despacho; fuera de Bogotá entre 2 y 4 días hábiles después del despacho.
 import { calcularProgramacionCompleta } from './programacion'
 
 export const CUPOS_DIA = { 0: 0, 1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 2 }
@@ -21,7 +23,8 @@ export const FESTIVOS = new Set([
   '2027-11-01', '2027-11-15', '2027-12-08', '2027-12-25',
 ])
 
-const DIAS_ENTREGA = { bogota: [1, 1], fuera: [3, 5] }
+const DIAS_ENTREGA = { bogota: [1, 1], fuera: [3, 5] } // días hábiles después de listo
+export function diaAnteriorHabil(iso) { let d = sumarDias(iso, -1); let g = 0; while (!esHabil(d) && g++ < 30) d = sumarDias(d, -1); return d }
 
 export function hoyColombia() { return new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10) }
 export function sumarDias(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
@@ -73,8 +76,18 @@ export function planificar(filas, productos, hoy = hoyColombia()) {
     f.dia_inicio = f.dia_fin = f.dia_produccion
     usar(f.dia_produccion, f.cupos)
   })
-  // 3) El resto, por fecha de entrega prometida, en el primer cupo libre (unidad por unidad)
-  enCola.filter(f => !(f.fijo && f.dia_produccion))
+  // 3a) Con fecha prometida: se fabrica 1 día hábil antes (o el primer día disponible si ya no alcanza)
+  enCola.filter(f => !(f.fijo && f.dia_produccion) && f.pedido.fecha_entrega)
+    .forEach(f => {
+      let d = diaAnteriorHabil(String(f.pedido.fecha_entrega).slice(0, 10))
+      if (d < primerDia) d = primerDia
+      let guard = 0
+      while (!esHabil(d) && guard++ < 30) d = sumarDias(d, 1)
+      f.dia_inicio = f.dia_fin = d
+      usar(d, f.cupos)
+    })
+  // 3b) Sin fecha prometida: en el primer cupo libre (unidad por unidad)
+  enCola.filter(f => !(f.fijo && f.dia_produccion) && !f.pedido.fecha_entrega)
     .sort((a, b) => String(a.pedido.fecha_entrega).localeCompare(String(b.pedido.fecha_entrega))
       || String(a.pedido.fecha_pedido).localeCompare(String(b.pedido.fecha_pedido))
       || String(a.pedido.numero).localeCompare(String(b.pedido.numero)))
@@ -92,16 +105,32 @@ export function planificar(filas, productos, hoy = hoyColombia()) {
 
   // 4) Fechas: listo y entrega real estimada contra la prometida
   const plan = items.map(f => {
-    const listo = f.etapa_actual === 'despacho' ? hoy : sumarHabiles(f.dia_fin, 1)
+    const listo = f.etapa_actual === 'despacho' ? hoy : f.dia_fin
     const [a, b] = esBogota(f.pedido.cliente?.ciudad) ? DIAS_ENTREGA.bogota : DIAS_ENTREGA.fuera
     const entrega_min = sumarHabiles(listo, a)
     const entrega_max = sumarHabiles(listo, b)
     const prometida = String(f.pedido.fecha_entrega || '').slice(0, 10)
-    const estado = !prometida ? 'sin_fecha' : entrega_max <= prometida ? 'ok' : entrega_min <= prometida ? 'justo' : 'tarde'
-    return { ...f, listo, entrega_min, entrega_max, prometida, estado, sobrecupo: (usados[f.dia_inicio] || 0) > capacidad(f.dia_inicio) + 1e-9 }
+    const despacho = sumarHabiles(listo, 1)
+    const estado = !prometida ? 'sin_fecha' : despacho <= prometida ? 'ok' : 'tarde'
+    return { ...f, listo, despacho, entrega_min, entrega_max, prometida, estado, sobrecupo: (usados[f.dia_inicio] || 0) > capacidad(f.dia_inicio) + 1e-9 }
   })
   return { plan, usados }
 }
+
+/** Fechas de despacho disponibles: el día anterior (fabricación) tiene cupo para `cupos`.
+ *  `propio` = { dia: cupos } que ya usa este mismo pedido (no cuentan como ocupados). */
+export function fechasDisponibles(usados, cupos = 1, n = 6, propio = {}, desde = hoyColombia()) {
+  const out = []
+  let fab = primerDiaPlan(desde)
+  let guard = 0
+  while (out.length < n && guard++ < 400) {
+    const cap = capacidad(fab)
+    if (cap > 0 && cap - (usados[fab] || 0) + (propio[fab] || 0) + 1e-9 >= Math.min(cupos, cap)) out.push({ fab, despacho: sumarHabiles(fab, 1) })
+    fab = sumarDias(fab, 1)
+  }
+  return out
+}
+export function cupoLibre(usados, fab, propio = {}) { return capacidad(fab) - (usados[fab] || 0) + (propio[fab] || 0) }
 
 /** Primer día con cupo libre (sin mover a nadie), para sugerir fechas a pedidos nuevos. */
 export function primerCupoLibre(usados, cupos = 1, desde = hoyColombia()) {
