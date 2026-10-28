@@ -12,6 +12,7 @@ import { SECCIONES, normalizar, siguiente, anterior, estadoPedido, etiqueta, lin
 export default function Produccion() {
   const [items, setItems] = useState(null)
   const [error, setError] = useState(null)
+  const [buscar, setBuscar] = useState('')
 
   async function cargar() {
     const { data, error: e } = await supabase.from('programacion_produccion')
@@ -35,6 +36,11 @@ export default function Produccion() {
   if (error) return <div className='p-4 max-w-2xl mx-auto'><p className='rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700'>No se pudo cargar: {error}</p></div>
   if (!items) return <div className='p-4 text-gray-500'>Cargando…</div>
 
+  // Buscador: por cliente, número de pedido, referencia o tela (sin importar tildes ni mayúsculas)
+  const sinTilde = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const q = sinTilde(buscar.trim())
+  const visibles = q ? items.filter(i => [i.cliente, i.numero, i.ref, i.tela].some(x => sinTilde(x).includes(q))) : items
+
   return (
     <div className='p-4 max-w-2xl mx-auto'>
       <div className='flex items-start justify-between gap-2 mb-4'>
@@ -48,8 +54,14 @@ export default function Produccion() {
         <a className='btn text-center text-sm' href={linkSemanaJefe(items, lunesDe(hoyISO()))} target='_blank' rel='noreferrer'>📲 Semana actual a Luis</a>
         <a className='btn text-center text-sm' href={linkSemanaJefe(items, sumar(lunesDe(hoyISO()), 7))} target='_blank' rel='noreferrer'>📲 Próxima semana a Luis</a>
       </div>
+      <div className='relative mb-4'>
+        <input type='search' aria-label='Buscar en producción' value={buscar} onChange={e => setBuscar(e.target.value)}
+          placeholder='🔍 Buscar por cliente, pedido o referencia…' className='w-full pr-9' />
+        {buscar && <button type='button' aria-label='Borrar búsqueda' onClick={() => setBuscar('')} className='absolute right-3 top-1/2 -translate-y-1/2 text-gray-400'>✕</button>}
+      </div>
+      {q && <p className='text-sm text-gray-500 -mt-2 mb-3'>{visibles.length ? `${visibles.length} resultado${visibles.length > 1 ? 's' : ''} para "${buscar.trim()}"` : `No hay pedidos en producción para "${buscar.trim()}".`}</p>}
       <VistaTaller
-        items={items}
+        items={visibles}
         secciones={SECCIONES.map(s => s.key)}
         mostrarCliente
         puedeMover={() => true}
