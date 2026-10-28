@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre, primerDiaPlan } from '@/lib/planificador'
+import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre, primerDiaPlan, esBogota } from '@/lib/planificador'
 
 /* Programación de fábrica: 3 cupos por día (sábado 2), por fecha de entrega prometida.
    Muestra cuándo se fabrica cada pedido, cuándo queda listo, la entrega real estimada
@@ -25,6 +25,7 @@ export default function Programacion() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('pedidos')
   const [reprog, setReprog] = useState(null)
+  const [ajustando, setAjustando] = useState(false)
 
   async function cargar() {
     try { setDatos(await cargarYPlanificar(supabase)); setError(null) }
@@ -39,24 +40,60 @@ export default function Programacion() {
   const cola = plan.filter(p => p.etapa_actual === 'cola').sort((a, b) => a.dia_inicio.localeCompare(b.dia_inicio) || a.pedido.numero.localeCompare(b.pedido.numero))
   const fabrica = plan.filter(p => p.etapa_actual !== 'cola')
   const tarde = plan.filter(p => p.estado === 'tarde').length
-  const justo = plan.filter(p => p.estado === 'justo').length
+  const hoyP = hoyColombia()
+  const diasLlenos = Object.entries(usados).filter(([d, u]) => d >= hoyP && u > capacidad(d) + 1e-9).length
   const libre1 = primerCupoLibre(usados, 1)
+  // Pedidos en cola cuya fabricación queda después de lo que exige la fecha prometida al cliente
+  const atras = (iso, n) => { let x = iso, k = 0; while (k < n) { x = sumarDias(x, -1); if (esHabil(x)) k++ } return x }
+  const primerDia = primerDiaPlan(hoyColombia())
+  const diaNecesario = p => atras(p.prometida, 1)
+  const tardeCola = cola.filter(p => p.prometida && p.estado === 'tarde')
+  const porAjustar = tardeCola.filter(p => diaNecesario(p) >= primerDia)
+  const imposibles = tardeCola.filter(p => diaNecesario(p) < primerDia)
+  const fijos = cola.filter(p => p.fijo)
+  async function ajustarATodas() {
+    const dias = {}
+    porAjustar.forEach(p => { const d = diaNecesario(p); dias[d] = (dias[d] || 0) + p.cupos })
+    const pesados = Object.entries(dias).filter(([d, c]) => c + (usados[d] || 0) > capacidad(d)).length
+    if (!confirm(`Se van a fijar ${porAjustar.length} pedidos en el día que necesitan para cumplir la fecha prometida al cliente.\n\nOjo: ${pesados} días quedarían con más sofás de los que caben (3 por día). En el calendario los verás en rojo con cuántos hay que sacar.\n\n¿Continuar?`)) return
+    setAjustando(true)
+    for (const p of porAjustar) await supabase.from('programacion_produccion').update({ fijo: true, dia_produccion: diaNecesario(p) }).eq('id', p.id)
+    setAjustando(false); setDatos(null); await cargar()
+  }
+  async function todoAutomatico() {
+    if (!confirm(`¿Volver los ${fijos.length} pedidos fijos 📌 a la programación automática por cupos?`)) return
+    setAjustando(true)
+    for (const p of fijos) await supabase.from('programacion_produccion').update({ fijo: false }).eq('id', p.id)
+    setAjustando(false); setDatos(null); await cargar()
+  }
 
   return (
     <div className={`p-4 mx-auto ${tab === 'mes' ? 'max-w-6xl' : 'max-w-2xl'}`}>
       <h1 className='text-xl font-medium'>Programación</h1>
-      <p className='text-sm text-gray-500 mb-4'>3 cupos por día (sábado 2) · se programa por fecha de entrega prometida</p>
+      <p className='text-sm text-gray-500 mb-4'>3 cupos por día (sábado 2) · cada pedido se fabrica 1 día hábil antes de la fecha prometida al cliente</p>
 
       <div className='grid grid-cols-3 gap-2 mb-4'>
         <Resumen n={cola.length} t='En cola' />
         <Resumen n={tarde} t='Se pasan' color={tarde ? 'text-red-600' : ''} />
-        <Resumen n={justo} t='Justos' color={justo ? 'text-amber-600' : ''} />
+        <Resumen n={diasLlenos} t='Días pasados de cupo' color={diasLlenos ? 'text-red-600' : ''} />
       </div>
       <div className='card mb-4 text-sm'>
         <div className='flex justify-between gap-2'><span className='text-gray-600'>Primer cupo libre para un sofá</span><b className='capitalize'>{f(libre1)}</b></div>
-        <div className='flex justify-between gap-2 mt-1'><span className='text-gray-600'>Entrega más pronta (Bogotá)</span><b className='capitalize'>{f(sumarHabiles(sumarHabiles(libre1, 1), 1))}</b></div>
-        <div className='flex justify-between gap-2 mt-1'><span className='text-gray-600'>Entrega más pronta (fuera de Bogotá)</span><b className='capitalize'>{f(sumarHabiles(sumarHabiles(libre1, 1), 5))}</b></div>
+        <div className='flex justify-between gap-2 mt-1'><span className='text-gray-600'>Entrega más pronta (Bogotá)</span><b className='capitalize'>{f(sumarHabiles(libre1, 1))}</b></div>
+        <div className='flex justify-between gap-2 mt-1'><span className='text-gray-600'>Entrega más pronta (fuera de Bogotá)</span><b className='capitalize'>{f(sumarHabiles(libre1, 5))}</b></div>
       </div>
+
+      {tardeCola.length > 0 && (
+        <div className='card mb-4 border-red-300 bg-red-50 text-sm space-y-2'>
+          <p className='text-red-800'><b>{tardeCola.length} pedidos</b> no alcanzan a despacharse en la fecha que se le dio al cliente.</p>
+          {porAjustar.length > 0 && <>
+            <button className='btn w-full' disabled={ajustando} onClick={ajustarATodas}>{ajustando ? 'Ajustando…' : `📌 Fabricar ${porAjustar.length} según la fecha prometida al cliente`}</button>
+            <p className='text-xs text-red-700'>Pone cada pedido en el día que necesita para cumplirle al cliente. Los días que se pasen de cupo quedan en rojo (ej. 5/3) para que sepas cuántos sofás extra hay que sacar ese día.</p>
+          </>}
+          {imposibles.length > 0 && <p className='text-xs text-red-800'><b>{imposibles.length} ya no alcanzan</b> aunque se fabriquen hoy: {imposibles.map(p => p.pedido.numero).join(', ')}. A esos hay que darles una fecha nueva desde <a href='/atencion' className='underline font-semibold'>Atención al cliente</a>.</p>}
+        </div>
+      )}
+      {fijos.length > 0 && <button className='text-xs underline text-gray-500 mb-3' disabled={ajustando} onClick={todoAutomatico}>Volver los {fijos.length} pedidos fijos 📌 a programación automática</button>}
 
       <div className='flex gap-2 mb-4'>
         {[['pedidos', 'Pedidos'], ['mes', '🗓️ Mes'], ['calendario', 'Días'], ['recaudo', '💰 Recaudo']].map(([k, l]) => (
@@ -261,7 +298,7 @@ function Mes({ plan, usados, onReprog, onMover }) {
   function delDia(d) {
     if (d >= hoy) {
       return plan.filter(p => p.etapa_actual === 'cola' ? (p.dia_inicio <= d && p.dia_fin >= d) : p.dia_inicio === d)
-        .map(p => ({ id: p.id, p, nombre: p.pedido.cliente?.nombre, modelo: p.pedido.tipo_sofa, numero: p.pedido.numero, g: grupoEtapa(p.etapa_actual, p.pedido.estado), tarde: p.estado === 'tarde', fijo: p.fijo }))
+        .map(p => ({ id: p.id, p, nombre: p.pedido.cliente?.nombre, modelo: p.pedido.tipo_sofa, numero: p.pedido.numero, g: grupoEtapa(p.etapa_actual, p.pedido.estado), tarde: p.estado === 'tarde', fijo: p.fijo, prometida: p.prometida }))
     }
     return historia.filter(r => r.dia_produccion === d)
       .map(r => ({ id: r.id, nombre: r.pedido.cliente?.nombre, modelo: r.pedido.tipo_sofa, numero: r.pedido.numero, g: grupoEtapa(r.etapa_actual, r.pedido.estado) }))
@@ -291,7 +328,8 @@ function Mes({ plan, usados, onReprog, onMover }) {
         <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-amber-100 border-amber-300' /> En fábrica</span>
         <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-green-100 border-green-300' /> Terminado</span>
         <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border bg-sky-100 border-sky-300' /> Entregado</span>
-        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border-2 border-red-500' /> Se pasa de la fecha</span>
+        <span className='flex items-center gap-1'><i className='inline-block w-3 h-3 rounded border-2 border-red-500' /> Se pasa de la fecha prometida</span>
+        <span className='flex items-center gap-1'><b className='text-red-600'>4/3</b> día con más sofás de los que caben</span>
       </div>
       <div className='overflow-x-auto rounded-lg border border-gray-300'>
         <table className='w-full min-w-[760px] border-collapse table-fixed text-xs'>
@@ -310,6 +348,7 @@ function Mes({ plan, usados, onReprog, onMover }) {
                   return (
                     <td key={d} data-dia={fuera ? undefined : d} className={`align-top border border-gray-300 p-1 h-24 ${drag && drag.sobre === d ? (sePuede(d) ? 'bg-purple-100' : 'bg-red-50') : fuera || cap === 0 ? 'bg-gray-100' : 'bg-white'} ${d === hoy ? 'ring-2 ring-inset ring-gray-900' : ''}`}>
                       <div className={`text-right text-[10px] mb-0.5 ${fuera ? 'text-gray-300' : 'text-gray-500'}`}>
+                        {!fuera && d >= hoy && cap > 0 && (usados[d] || 0) > 0 && <span className={`float-left font-semibold ${(usados[d] || 0) > cap + 1e-9 ? 'text-red-600' : 'text-gray-400'}`}>{Math.round((usados[d] || 0) * 100) / 100}/{cap}</span>}
                         {FESTIVOS.has(d) && !fuera ? 'Festivo · ' : ''}{Number(d.slice(8))}
                       </div>
                       <div className='space-y-0.5'>
@@ -321,6 +360,7 @@ function Mes({ plan, usados, onReprog, onMover }) {
                             style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none', touchAction: drag ? 'none' : 'auto' }}
                             className={`block w-full text-left truncate px-1 py-0.5 rounded border ${COLOR_ETAPA[it.g]} ${it.tarde ? 'border-2 border-red-500' : ''} ${drag && drag.it.id === it.id ? 'opacity-30' : ''} ${moviendo === it.id ? 'animate-pulse' : ''} ${it.p && it.p.etapa_actual === 'cola' ? 'cursor-grab' : ''}`}>
                             {corto(it.nombre)}{it.fijo ? ' 📌' : ''}
+                            {it.prometida && <span className={`block text-[10px] leading-tight ${it.tarde ? 'text-red-700 font-semibold' : 'opacity-70'}`}>entrega {Number(it.prometida.slice(8))}/{Number(it.prometida.slice(5, 7))}</span>}
                           </button>
                         ))}
                       </div>
@@ -378,7 +418,7 @@ function Reprogramar({ p, usados, cerrar, listo }) {
           {opciones.map(({ d, libre }) => {
             const alcanza = libre + 1e-9 >= p.cupos
             const actual = d === p.dia_inicio
-            const entrega = sumarHabiles(sumarHabiles(d, 1), p.entrega_min === p.entrega_max ? 1 : 5)
+            const entrega = sumarHabiles(d, 1)
             const aTiempo = !p.prometida || entrega <= p.prometida
             return (
               <button key={d} disabled={guardando || actual} onClick={() => (alcanza || confirm('Ese día no tiene cupo suficiente. ¿Programarlo igual?')) && elegir(d)}
