@@ -139,6 +139,22 @@ export default function Atencion() {
       <h1 className='text-xl font-medium'>Atención al cliente</h1>
       <p className='text-sm text-gray-500 mb-4'>Avísale al cliente antes de que pregunte. La nueva fecha sale de la programación de la fábrica; puedes cambiarla.</p>
 
+      <div className='relative mb-3'>
+        <input type='search' aria-label='Buscar cliente' className='w-full pr-9' placeholder='🔍 Buscar cliente, pedido o referencia…' value={buscar} onChange={e => setBuscar(e.target.value)} />
+        {buscar && <button type='button' aria-label='Borrar búsqueda' onClick={() => setBuscar('')} className='absolute right-3 top-1/2 -translate-y-1/2 text-gray-400'>✕</button>}
+      </div>
+
+      {buscar.trim() ? (() => {
+        const sinTilde = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        const q = sinTilde(buscar.trim())
+        const vis = todos.filter(x => [x.g, x.cliente?.nombre, x.cliente?.telefono, ...x.items.map(i => i.pedido.tipo_sofa)].some(t => sinTilde(t).includes(q)))
+        return (
+          <>
+            <p className='text-xs text-gray-500 mb-2'>{vis.length ? `${vis.length} resultado${vis.length > 1 ? 's' : ''}. Abre el pedido y elige el mensaje.` : 'No hay pedidos activos con esa búsqueda.'}</p>
+            <div className='space-y-3'>{vis.map(x => <Retrasado key={'b' + x.g} x={x} hoy={hoy} recargar={cargar} medios={medios} modo={x.vencido || x.tarde ? 'disculpa' : x.items.every(i => i.etapa_actual === 'despacho') ? 'despacho' : 'confirmar'} />)}</div>
+          </>
+        )
+      })() : (<>
       <div className='flex gap-2 mb-4'>
         {[['retrasados', `⏰ Retrasados (${lista.length})`], ['confirmar', '✅ Confirmar entrega']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${tab === k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{l}</button>
@@ -146,15 +162,12 @@ export default function Atencion() {
       </div>
 
       {tab === 'confirmar' ? (() => {
-        const sinTilde = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-        const q = sinTilde(buscar.trim())
-        const vis = todos.filter(x => !q || [x.g, x.cliente?.nombre, ...x.items.map(i => i.pedido.tipo_sofa)].some(t => sinTilde(t).includes(q)))
+        const vis = todos
         return (
           <>
             <p className='text-xs text-gray-500 mb-2'>Mensaje para confirmarle al cliente su fecha de entrega, sin disculpas. Si cambias la fecha, también se reprograma en el ERP.</p>
-            <input type='search' aria-label='Buscar pedido' className='w-full mb-3' placeholder='🔍 Buscar por cliente, pedido o referencia…' value={buscar} onChange={e => setBuscar(e.target.value)} />
             <div className='space-y-3'>{vis.map(x => <Retrasado key={'c' + x.g} x={x} hoy={hoy} recargar={cargar} medios={medios} modo={x.items.every(i => i.etapa_actual === 'despacho') ? 'despacho' : 'confirmar'} />)}</div>
-            {!vis.length && <div className='card text-center text-gray-500 py-6'>No hay pedidos con esa búsqueda.</div>}
+            {!vis.length && <div className='card text-center text-gray-500 py-6'>No hay pedidos activos.</div>}
           </>
         )
       })() : (<>
@@ -179,6 +192,7 @@ export default function Atencion() {
         </>
       )}
       </>)}
+      </>)}
     </div>
   )
 }
@@ -187,10 +201,11 @@ function Retrasado({ x, hoy, recargar, medios, modo: modoInicial = 'disculpa' })
   const [abierto, setAbierto] = useState(false)
   const [modo, setModo] = useState(modoInicial)
   const manana = sumarHabiles(hoy, 1)
-  const baseDe = m => m === 'despacho' ? manana : m === 'confirmar' && x.prometida && !x.vencido && !x.tarde ? x.prometida : x.sugerida
+  const actual = String(x.items[0].pedido.fecha_entrega || '').slice(0, 10)
+  const baseDe = m => m === 'personal' ? actual : m === 'despacho' ? manana : m === 'confirmar' && x.prometida && !x.vencido && !x.tarde ? x.prometida : x.sugerida
   const fechaBase = baseDe(modoInicial)
   const [fecha, setFecha] = useState(fechaBase)
-  const armar = (m, d) => m === 'despacho' ? mensajeDespacho(x, d, hoy, medios) : m === 'confirmar' ? mensajeConfirmar(x, d) : mensaje(x, d, x.avisos)
+  const armar = (m, d) => m === 'personal' ? `♛ *MR. CHESTER* ♛\n\nHola, ${primerNombre(x.cliente?.nombre)} 👋\n\n\n\n*Equipo Mr. Chester*` : m === 'despacho' ? mensajeDespacho(x, d, hoy, medios) : m === 'confirmar' ? mensajeConfirmar(x, d) : mensaje(x, d, x.avisos)
   const [texto, setTexto] = useState(() => armar(modoInicial, fechaBase))
   const [editado, setEditado] = useState(false)
   const [hecho, setHecho] = useState(false)
@@ -205,13 +220,13 @@ function Retrasado({ x, hoy, recargar, medios, modo: modoInicial = 'disculpa' })
   async function reprogramar() {
     setError(null)
     for (const i of x.items) {
-      const cambia = String(i.pedido.fecha_entrega || '').slice(0, 10) !== fecha
+      const cambia = modo !== 'personal' && String(i.pedido.fecha_entrega || '').slice(0, 10) !== fecha
       if (cambia) {
         const { error: e1 } = await supabase.from('pedidos').update({ fecha_entrega: fecha }).eq('id', i.pedido.id)
         if (e1) { setError('No se pudo cambiar la fecha: ' + e1.message); return }
       }
       await supabase.from('historial_estados').insert({ pedido_id: i.pedido.id, estado_anterior: i.pedido.estado, estado_nuevo: i.pedido.estado,
-        nota: cambia ? `Reprogramado: entrega del ${x.prometida || 'sin fecha'} al ${fecha}. Cliente avisado por WhatsApp.` : `Fecha de entrega (${fecha}) confirmada al cliente por WhatsApp.` })
+        nota: modo === 'personal' ? `Mensaje personalizado enviado por WhatsApp: ${texto.replace(/[*_]/g, '').replace(/\s+/g, ' ').slice(0, 300)}` : cambia ? `Reprogramado: entrega del ${x.prometida || 'sin fecha'} al ${fecha}. Cliente avisado por WhatsApp.` : `Fecha de entrega (${fecha}) confirmada al cliente por WhatsApp.` })
     }
     setHecho(true)
     setTimeout(recargar, 1500)
@@ -238,20 +253,20 @@ function Retrasado({ x, hoy, recargar, medios, modo: modoInicial = 'disculpa' })
 
       {abierto && !hecho && (
         <div className='border-t border-gray-100 p-4 space-y-3'>
-          <div className='grid grid-cols-3 gap-2'>
-            {[['disculpa', '🙏 Disculpa'], ['confirmar', '✅ Confirmar fecha'], ['despacho', '🚚 Despacho']].map(([k, l]) => (
-              <button key={k} type='button' onClick={() => { setModo(k); setEditado(false); if (k === 'despacho') setFecha(manana); else if (modo === 'despacho') setFecha(baseDe(k)) }}
+          <div className='grid grid-cols-2 sm:grid-cols-4 gap-2'>
+            {[['disculpa', '🙏 Disculpa'], ['confirmar', '✅ Confirmar fecha'], ['despacho', '🚚 Despacho'], ['personal', '✏️ Personalizado']].map(([k, l]) => (
+              <button key={k} type='button' onClick={() => { setModo(k); setEditado(false); if (k === 'despacho' || k === 'personal' || modo === 'despacho' || modo === 'personal') setFecha(baseDe(k)) }}
                 className={`rounded-lg border px-2 py-2 text-sm font-medium ${modo === k ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700'}`}>{l}</button>
             ))}
           </div>
-          <div>
+          {modo !== 'personal' && <div>
             <label htmlFor={`f-${x.g}`} className='text-xs text-gray-500 mb-1 block'>Nueva fecha de entrega</label>
             <input id={`f-${x.g}`} type='date' value={fecha} onChange={e => setFecha(e.target.value)} />
             <p className='text-xs text-gray-500 mt-1'>Sugerida por la programación: {fechaLarga(x.sugerida)}.</p>
             {antes && <p className='text-xs text-amber-700 mt-1'>⚠ Es antes de lo que da la programación. Asegúrate de poder cumplirla para no volver a fallarle.</p>}
-          </div>
+          </div>}
           <div>
-            <label htmlFor={`m-${x.g}`} className='text-xs text-gray-500 mb-1 block'>Mensaje (lo puedes editar)</label>
+            <label htmlFor={`m-${x.g}`} className='text-xs text-gray-500 mb-1 block'>{modo === 'personal' ? 'Escribe tu mensaje (entre el saludo y la firma)' : 'Mensaje (lo puedes editar)'}</label>
             <textarea id={`m-${x.g}`} rows={12} className='w-full text-sm' value={texto} onChange={e => { setTexto(e.target.value); setEditado(true) }} />
             {editado && <button type='button' className='text-xs underline text-gray-500' onClick={() => { setEditado(false); setTexto(armar(modo, fecha)) }}>Volver al mensaje original</button>}
           </div>
@@ -259,7 +274,7 @@ function Retrasado({ x, hoy, recargar, medios, modo: modoInicial = 'disculpa' })
           {telWa ? (
             <a className='btn w-full text-center block' style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }}
               href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto)}`} target='_blank' rel='noreferrer' onClick={reprogramar}>
-              {String(x.items[0].pedido.fecha_entrega || '').slice(0, 10) === fecha ? '📲 Enviar por WhatsApp' : '📲 Enviar por WhatsApp y reprogramar'}
+              {modo === 'personal' || actual === fecha ? '📲 Enviar por WhatsApp' : '📲 Enviar por WhatsApp y reprogramar'}
             </a>
           ) : (
             <div className='space-y-2'>
@@ -267,7 +282,7 @@ function Retrasado({ x, hoy, recargar, medios, modo: modoInicial = 'disculpa' })
               <button className='btn w-full' onClick={() => { navigator.clipboard?.writeText(texto); reprogramar() }}>Copiar mensaje y reprogramar</button>
             </div>
           )}
-          <p className='text-xs text-gray-500'>Al tocarlo, la fecha de entrega cambia en el ERP{x.items.length > 1 ? ` para los ${x.items.length} productos` : ''}, queda anotado en el historial y el cliente la ve en su seguimiento.</p>
+          {modo !== 'personal' && <p className='text-xs text-gray-500'>Al tocarlo, la fecha de entrega cambia en el ERP{x.items.length > 1 ? ` para los ${x.items.length} productos` : ''}, queda anotado en el historial y el cliente la ve en su seguimiento.</p>}
         </div>
       )}
     </div>
