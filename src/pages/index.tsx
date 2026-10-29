@@ -442,7 +442,7 @@ export default function Dashboard() {
       supabase.from('pedidos').select('id, precio_venta, abono, fecha_entrega, estado').not('estado', 'in', '(entregado,cancelado)'),
       supabase.from('programacion_produccion').select('etapa_actual, pedido:pedidos(estado)'),
       supabase.from('crm_prospectos').select('etapa, created_at, proximo_seguimiento'),
-      supabase.from('cotizaciones').select('estado, total, created_at'),
+      supabase.from('cotizaciones').select('estado, total, created_at, alarma, seguimientos:cotizacion_seguimientos(created_at)'),
       supabase.from('wa_mensajes').select('telefono, direccion, created_at').gte('created_at', hoy + 'T05:00:00Z'),
       supabase.from('historial_estados').select('pedido_id').gte('created_at', hoy + 'T05:00:00Z').or('nota.ilike.Reprogramado%,nota.ilike.Fecha de entrega%confirmada%,nota.ilike.Mensaje personalizado%'),
       supabase.from('compra_proveedores').select('id, nombre, dias').eq('activo', true),
@@ -481,6 +481,13 @@ export default function Dashboard() {
       seguimientos: abiertos.filter((x: any) => x.proximo_seguimiento && x.proximo_seguimiento <= hoy).length,
       ganadosMes: leads.filter((x: any) => x.etapa === 'ganado' && String(x.created_at) >= mesIni).length,
       cotAbiertas: (cots.data || []).filter((x: any) => x.estado === 'enviada'),
+      cotAlarmas: (cots.data || []).filter((x: any) => {
+        if (!['enviada', 'aceptada'].includes(x.estado)) return false
+        if (x.alarma) return x.alarma <= hoy
+        if (x.estado !== 'enviada') return false
+        const ult = Math.max(new Date(x.created_at).getTime(), ...(x.seguimientos || []).map((s: any) => new Date(s.created_at).getTime()))
+        return Date.now() - ult >= 2 * 864e5
+      }).length,
       waHoy: new Set((wa.data || []).filter((x: any) => x.direccion === 'entrante').map((x: any) => x.telefono)).size,
       avisadosHoy: new Set((avisos.data || []).map((x: any) => x.pedido_id)).size,
       provHoy, pedidosHoy, bajos,
@@ -577,10 +584,11 @@ export default function Dashboard() {
             </div>
           </Tarjeta>
 
-          <Tarjeta titulo='Cotizaciones' icono='📝' href='/cotizaciones'>
-            <div className='grid grid-cols-2 gap-2'>
-              <Dato n={d.cotAbiertas.length} t='enviadas sin cerrar' />
+          <Tarjeta titulo='Cotizaciones' icono='📝' href='/cotizaciones?ver=todas' alerta={d.cotAlarmas > 0}>
+            <div className='grid grid-cols-3 gap-2'>
+              <Dato n={d.cotAbiertas.length} t='sin cerrar' />
               <Dato n={millones(valorCot)} t='en juego' />
+              <Dato n={d.cotAlarmas} t='🔔 seguir hoy' color={d.cotAlarmas ? 'text-red-600' : ''} />
             </div>
           </Tarjeta>
 
