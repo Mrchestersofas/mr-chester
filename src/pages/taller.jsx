@@ -3,7 +3,7 @@ import Head from 'next/head'
 import { supabase } from '@/lib/supabase'
 import VistaTaller from '@/components/VistaTaller'
 import MiTrabajo from '@/components/MiTrabajo'
-import { SECCIONES, normalizar, etiqueta } from '@/lib/etapas'
+import { SECCIONES, normalizar, etiqueta, notaTaller } from '@/lib/etapas'
 
 /* Taller: página para los encargados de sección y el jefe de producción.
    Entran con usuario y clave (tabla taller_usuarios, revisada en la base con taller_datos).
@@ -60,7 +60,7 @@ function Taller() {
   }
 
   const u = datos?.usuario
-  const items = (datos?.items || []).map(normalizar)
+  const items = (datos?.items || []).map(normalizar).map(it => ({ ...it, obs: notaTaller(it.obs) }))
   const secciones = u?.rol === 'jefe' || !u?.seccion ? SECCIONES.map(s => s.key) : [u.seccion]
 
   return (
