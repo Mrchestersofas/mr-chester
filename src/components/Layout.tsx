@@ -32,7 +32,7 @@ const navItems = [
 
 // Quiénes pueden entrar al ERP. El usuario "joseph" usa su correo; los demás, usuario@envios.mrchester.com.co
 const USUARIOS: Record<string, string> = { joseph: 'josephtoledo@gmail.com', 'joséph': 'josephtoledo@gmail.com', 'josé': 'josephtoledo@gmail.com', jose: 'josephtoledo@gmail.com', monica: 'monica@envios.mrchester.com.co', 'mónica': 'monica@envios.mrchester.com.co' }
-const PERMITIDOS = ['josephtoledo@gmail.com', 'monica@envios.mrchester.com.co']
+export const PERMITIDOS = ['josephtoledo@gmail.com', 'monica@envios.mrchester.com.co']
 // Los vendedores (tabla cap_equipo) solo ven estas páginas
 const PAGINAS_VENDEDOR = ['/capacitacion', '/cotizaciones']
 
