@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, Pedido } from '@/lib/supabase'
 import { EstadoBadge } from '@/components/Badges'
 import Link from 'next/link'
+import FlujoFabrica from '@/components/FlujoFabrica'
 import { AlertTriangle, Package, ClipboardList, Wrench, DollarSign, Plus, ShoppingCart, Search, X, Phone, MapPin, User, FileText, Clock } from 'lucide-react'
 import { format, differenceInDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -522,6 +523,8 @@ export default function Dashboard() {
       </div>
 
       <BuscadorPedido />
+
+      <FlujoFabrica />
 
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
         <div>
