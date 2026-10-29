@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ETAPAS_FAB, etiqueta, indice, siguiente, anterior, hoyISO, sumar, fCorta, lunesDe } from '@/lib/etapas'
+import { ETAPAS_FAB, etiqueta, indice, siguiente, anterior, hoyISO, sumar, fCorta, lunesDe, SIN_TELA } from '@/lib/etapas'
 
 /* Vista de fábrica compartida: la usa Producción (ERP, Joseph/jefe) y Taller (encargados).
    - "Ahora": qué hay en cada sección en este momento (y botones para mover, si se permite)
@@ -252,7 +252,7 @@ function DiaSecciones({ dia, items, secciones, mostrarCliente, compacto }) {
                   <div key={it.id + s} className={`flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 ${compacto ? 'text-sm' : ''}`}>
                     <div className='min-w-0'>
                       <div className='font-medium'>{it.numero} · {it.ref}{it.cantidad > 1 ? ` × ${it.cantidad}` : ''}</div>
-                      <div className='text-xs text-gray-500 truncate'>{it.tela}{mostrarCliente && it.cliente ? ` · ${it.cliente}` : ''} · entrega {fCorta(it.entrega)}</div>
+                      <div className='text-xs text-gray-500 truncate'>{mostrarCliente || !SIN_TELA.includes(s) ? it.tela : ''}{mostrarCliente && it.cliente ? ` · ${it.cliente}` : ''}{mostrarCliente ? ` · entrega ${fCorta(it.entrega)}` : ''}</div>
                     </div>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${cls}`}>{txt}</span>
                   </div>
