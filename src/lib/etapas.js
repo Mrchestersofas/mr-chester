@@ -90,9 +90,11 @@ export function trabajoSeccion(items, s, dia) {
 }
 
 function lineaItem(it, s) {
-  const extra = s === 'corte_tela' && it.metros ? ` · ${it.metros} m` : ''
-  const obs = it.obs ? `\n   📝 ${String(it.obs).replace(/\s+/g, ' ').slice(0, 140)}` : ''
-  return `• ${it.numero} · ${it.ref}${it.cantidad > 1 ? ` ×${it.cantidad}` : ''} · ${it.tela || 'tela por definir'}${extra} · entrega ${fCorta(it.entrega)}${it.prioridad === 'urgente' ? ' · ⚠️ URGENTE' : ''}${obs}`
+  const extra = s === 'corte_tela' && it.metros ? ` · ${Math.round(it.metros * 10) / 10} m de tela` : ''
+  const nota = notaTaller(it.obs)
+  const obs = nota ? `\n   📝 ${nota.replace(/\s+/g, ' ').slice(0, 140)}` : ''
+  const tela = s && SIN_TELA.includes(s) ? '' : ` · ${it.tela || 'tela por definir'}${extra}`
+  return `• *${it.ref}*${it.cantidad > 1 ? ` ×${it.cantidad}` : ''}${tela} (${it.numero})${it.prioridad === 'urgente' ? ' · ⚠️ URGENTE' : ''}${obs}`
 }
 
 export function textoDiaSeccion(items, s, dia, nombre) {
@@ -123,3 +125,23 @@ export function textoDiaGeneral(items, dia, nombre) {
 }
 
 export const linkWhatsApp = (tel, texto) => `https://wa.me/57${String(tel || '').replace(/\D/g, '').replace(/^57(?=\d{10}$)/, '')}?text=${encodeURIComponent(texto)}`
+
+// ---------- Lo que ve el taller ----------
+// Secciones que solo necesitan el modelo y la medida (sin tela)
+export const SIN_TELA = ['estructura', 'espumado']
+const m = n => (Number(n) / 100).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+/** "Cheers 200" → { modelo: 'Cheers', medida: '2,00 m' }; "Puff baúl 120 x 060" → { modelo: 'Puff baúl', medida: '1,20 × 0,60 m' } */
+export function modeloMedida(ref) {
+  const r = String(ref || '').trim()
+  let x = r.match(/^(.*?)\s+(?:medida\s+)?(\d{2,3})\s*[x×]\s*(\d{2,3})$/i)
+  if (x) return { modelo: x[1], medida: `${m(x[2])} × ${m(x[3])} m` }
+  x = r.match(/^(.*?)\s+(?:medida\s+)?(\d{3})$/i)
+  if (x) return { modelo: x[1], medida: `${m(x[2])} m` }
+  return { modelo: r, medida: '' }
+}
+/** Quita de las observaciones lo que no es de fabricación (pagos, envíos, direcciones, Shopify…). */
+export function notaTaller(obs) {
+  if (!obs) return ''
+  const fuera = /pag|cuota|abon|saldo|\$|shopify|mercado ?pago|env[ií]o|factur|transfer|nequi|bancolombia|precio|descuento|waze|direcci|domicilio|tel[eé]fono|celular|wompi|link/i
+  return String(obs).split(/\n|·/).map(t => t.trim()).filter(t => t && !fuera.test(t)).join(' · ')
+}
