@@ -33,7 +33,7 @@ export default function Cotizaciones() {
     <div className='p-4 max-w-2xl mx-auto'>
       <h1 className='text-xl font-medium mb-4'>Cotizaciones</h1>
       <div className='flex gap-2 mb-5'>
-        {[['nueva', 'Nueva cotización'], ['todas', `Todas (${lista.length})`]].map(([k, l]) => (
+        {[['nueva', 'Nueva cotización'], ['todas', `Todas (${lista.length})${lista.filter(tocaSeguimiento).length ? ` · 🔔 ${lista.filter(tocaSeguimiento).length}` : ''}`]].map(([k, l]) => (
           <button key={k} className={`btn flex-1 ${vista === k ? 'btn-primary' : ''}`} onClick={() => { setVista(k); if (k === 'todas') cargarLista() }}>{l}</button>
         ))}
       </div>
@@ -338,14 +338,16 @@ function Lista({ lista, recargar }) {
   useEffect(() => { if (lista.some(tocaSeguimiento)) setFiltro('seguir') }, [lista.length])
   const porSeguir = lista.filter(tocaSeguimiento)
   const visibles = lista.filter(c => filtro === 'todas' ? true : filtro === 'seguir' ? tocaSeguimiento(c) : ['enviada', 'aceptada', 'vencida'].includes(estadoReal(c)))
+    .sort((a, b) => filtro === 'seguir' ? String(proximaAlarma(a) || '').localeCompare(String(proximaAlarma(b) || '')) : 0)
   if (!lista.length) return <p className='text-gray-500 text-center py-10'>Todavía no hay cotizaciones.</p>
   return (
     <div className='space-y-3'>
       <div className='flex gap-2 text-sm flex-wrap'>
-        {[['seguir', `Toca seguimiento (${porSeguir.length})`], ['abiertas', 'Pendientes'], ['todas', 'Todas']].map(([k, l]) => (
+        {[['seguir', `🔔 Alarmas (${porSeguir.length})`], ['abiertas', 'Pendientes'], ['todas', 'Todas']].map(([k, l]) => (
           <button key={k} className={`px-3 py-1 rounded-full border ${filtro === k ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300'}`} onClick={() => setFiltro(k)}>{l}</button>
         ))}
       </div>
+      {porSeguir.length > 0 && filtro !== 'seguir' && <button type='button' className='w-full rounded-lg border-2 border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800 text-left' onClick={() => setFiltro('seguir')}>🔔 Tienes {porSeguir.length} cotizaci{porSeguir.length > 1 ? 'ones' : 'ón'} para hacer seguimiento hoy · Ver</button>}
       {visibles.length === 0 && <p className='text-gray-500 text-center py-6'>{filtro === 'seguir' ? '¡Al día! No hay seguimientos pendientes.' : 'No hay cotizaciones pendientes.'}</p>}
       {visibles.map(c => (
         <Fila key={c.id} c={c} abierta={abierta === c.id} toggle={() => setAbierta(abierta === c.id ? null : c.id)} recargar={recargar} />
@@ -378,7 +380,8 @@ function Fila({ c, abierta, toggle, recargar }) {
               {(c.seguimientos || []).length
                 ? <span className='text-gray-500'>Último seguimiento: {haceDias(ultimoContacto(c))} ({(c.seguimientos || []).length})</span>
                 : <span className='text-gray-500'>Sin seguimientos</span>}
-              {tocaSeguimiento(c) && <span className='ml-2 inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold'>Toca seguimiento</span>}
+              {tocaSeguimiento(c) ? <span className='ml-2 inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold'>🔔 {textoAlarma(proximaAlarma(c) || hoyBogota())}</span>
+                : proximaAlarma(c) && <span className='ml-2 text-gray-500'>🔔 {textoAlarma(proximaAlarma(c))}</span>}
             </div>
           </div>
           <div className='text-right flex-none'>
@@ -406,6 +409,7 @@ function Fila({ c, abierta, toggle, recargar }) {
             <button className='btn w-full' disabled={correo?.enviando} onClick={async () => { setCorreo({ enviando: true }); setCorreo(await enviarCorreo(c, c.cliente)) }}>Reenviar por correo</button>
           )}
           <EstadoCorreo correo={correo} cliente={c.cliente} />
+          {!['convertida', 'rechazada'].includes(est) && <Alarma c={c} recargar={recargar} />}
           {!['convertida', 'rechazada'].includes(est) && <Seguimiento c={c} recargar={recargar} />}
           {(c.seguimientos || []).length > 0 && <Historial c={c} />}
           {est !== 'convertida' && (
@@ -430,8 +434,58 @@ function ultimoContacto(c) {
   return new Date(Math.max(...fechas))
 }
 function tocaSeguimiento(c) {
-  if (!['enviada', 'vencida'].includes(estadoReal(c))) return false
+  if (!['enviada', 'vencida', 'aceptada'].includes(estadoReal(c))) return false
+  if (c.alarma) return c.alarma <= hoyBogota()
+  if (estadoReal(c) === 'aceptada') return false
   return (Date.now() - ultimoContacto(c).getTime()) / 86400000 >= DIAS_ENTRE_SEGUIMIENTOS
+}
+// Fecha de la próxima alarma (la que puso el vendedor, o la automática cada 2 días)
+function proximaAlarma(c) {
+  if (c.alarma) return c.alarma
+  if (!['enviada', 'vencida'].includes(estadoReal(c))) return null
+  return hoyBogota(new Date(ultimoContacto(c).getTime() + DIAS_ENTRE_SEGUIMIENTOS * 86400000))
+}
+function sumarDiasISO(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+function textoAlarma(iso) {
+  const hoy = hoyBogota()
+  const d = Math.round((new Date(iso + 'T12:00:00Z') - new Date(hoy + 'T12:00:00Z')) / 86400000)
+  if (d < 0) return `vencida hace ${-d} día${d === -1 ? '' : 's'}`
+  if (d === 0) return 'hoy'
+  if (d === 1) return 'mañana'
+  return `el ${fechaCorta(iso)}`
+}
+
+function Alarma({ c, recargar }) {
+  const [nota, setNota] = useState(c.alarma_nota || '')
+  const [eligiendo, setEligiendo] = useState(false)
+  const prox = proximaAlarma(c)
+  const hoy = hoyBogota()
+  async function poner(fecha) {
+    await supabase.from('cotizaciones').update({ alarma: fecha, alarma_nota: fecha ? (nota.trim() || null) : null }).eq('id', c.id)
+    setEligiendo(false); recargar()
+  }
+  const vencida = prox && prox <= hoy
+  return (
+    <div className={`rounded-lg border p-3 space-y-2 ${vencida ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+      <div className='flex justify-between items-center gap-2'>
+        <span className={`text-sm font-semibold ${vencida ? 'text-red-700' : ''}`}>🔔 {prox ? `Alarma ${textoAlarma(prox)}` : 'Sin alarma'}{!c.alarma && prox ? ' (automática)' : ''}</span>
+        {c.alarma && <button type='button' className='text-xs underline text-gray-500' onClick={() => poner(null)}>Quitar</button>}
+      </div>
+      {c.alarma_nota && <p className='text-xs text-gray-600'>📝 {c.alarma_nota}</p>}
+      <div className='flex flex-wrap gap-1.5'>
+        {[['Mañana', 1], ['En 3 días', 3], ['En 1 semana', 7]].map(([l, n]) => (
+          <button key={l} type='button' className='text-xs px-2.5 py-1 rounded-full border border-gray-300 bg-white' onClick={() => poner(sumarDiasISO(hoy, n))}>{l}</button>
+        ))}
+        <button type='button' className='text-xs px-2.5 py-1 rounded-full border border-gray-300 bg-white' onClick={() => setEligiendo(!eligiendo)}>📅 Elegir fecha</button>
+      </div>
+      {eligiendo && (
+        <div className='space-y-2'>
+          <input type='date' aria-label='Fecha de la alarma' min={hoy} onChange={e => e.target.value && poner(e.target.value)} />
+        </div>
+      )}
+      <input aria-label='Nota de la alarma' value={nota} onChange={e => setNota(e.target.value)} onBlur={() => c.alarma && nota !== (c.alarma_nota || '') && poner(c.alarma)} placeholder='Nota: ej. "llamar después de las 5", "va a hablar con su esposa"' className='text-sm' />
+    </div>
+  )
 }
 function haceDias(fecha) {
   const d = Math.floor((new Date(hoyBogota()) - new Date(hoyBogota(new Date(fecha)))) / 86400000)
@@ -465,6 +519,8 @@ function Seguimiento({ c, recargar }) {
   async function registrar(canal) {
     const { error } = await supabase.from('cotizacion_seguimientos').insert({ cotizacion_id: c.id, canal, mensaje: texto.trim() })
     if (error) { setEstado({ error: 'No quedó registrado: ' + error.message }); return false }
+    // Después de cada seguimiento, la próxima alarma queda en 2 días (se puede cambiar)
+    await supabase.from('cotizaciones').update({ alarma: sumarDiasISO(hoyBogota(), DIAS_ENTRE_SEGUIMIENTOS), alarma_nota: null }).eq('id', c.id)
     recargar()
     return true
   }
