@@ -110,7 +110,8 @@ export function planificar(filas, productos, hoy = hoyColombia()) {
     const entrega_min = sumarHabiles(listo, a)
     const entrega_max = sumarHabiles(listo, b)
     const prometida = String(f.pedido.fecha_entrega || '').slice(0, 10)
-    const despacho = sumarHabiles(listo, 1)
+    // Si ya está listo (en Despacho), se puede despachar hoy mismo
+    const despacho = f.etapa_actual === 'despacho' ? hoy : sumarHabiles(listo, 1)
     const estado = !prometida ? 'sin_fecha' : despacho <= prometida ? 'ok' : 'tarde'
     return { ...f, listo, despacho, entrega_min, entrega_max, prometida, estado, sobrecupo: (usados[f.dia_inicio] || 0) > capacidad(f.dia_inicio) + 1e-9 }
   })
