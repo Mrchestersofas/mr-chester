@@ -410,169 +410,209 @@ function MetaDelDia() {
   )
 }
 
-export default function Dashboard() {
-  const [pedidos, setPedidos] = useState<Pedido[]>([])
-  // Compras de hoy (módulo nuevo de Compras: proveedores con días fijos)
-  const [comprasHoy, setComprasHoy] = useState<any[]>([])
-  const [pedidosCompraHoy, setPedidosCompraHoy] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [resumen, setResumen] = useState<any>({ activos: 0, enProd: 0, ventasMes: 0 })
+const pesosD = (n: number) => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
+const millones = (n: number) => '$' + (Number(n || 0) / 1_000_000).toFixed(1).replace('.', ',') + 'M'
 
-  useEffect(() => {
-    async function load() {
-      const hoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10)
-      const dia = new Date(hoy + 'T12:00:00Z').getUTCDay()
-      const [{ data: p }, { data: provs }, { data: hechos }] = await Promise.all([
-        supabase.from('pedidos').select('*, cliente:clientes(*)').order('created_at', { ascending: false }).limit(10),
-        supabase.from('compra_proveedores').select('*, insumos:compra_insumos(*)').eq('activo', true).order('orden'),
-        supabase.from('compra_pedidos').select('proveedor_id, created_at').eq('fecha', hoy),
-      ])
-      setPedidos(p || [])
-      // Contadores reales (no solo los 10 recientes)
-      const mesIni = hoy.slice(0, 8) + '01'
-      const [{ count: nAct }, { data: prog }, { data: delMes }] = await Promise.all([
-        supabase.from('pedidos').select('id', { count: 'exact', head: true }).not('estado', 'in', '(entregado,cancelado)'),
-        supabase.from('programacion_produccion').select('etapa_actual, pedido:pedidos(estado)').not('etapa_actual', 'in', '(cola,completado,despacho)'),
-        supabase.from('pedidos').select('precio_venta').neq('estado', 'cancelado').gte('fecha_pedido', mesIni).lte('fecha_pedido', hoy),
-      ])
-      setResumen({
-        activos: nAct || 0,
-        enProd: (prog || []).filter((x: any) => x.pedido && !['entregado', 'cancelado'].includes(x.pedido.estado)).length,
-        ventasMes: (delMes || []).reduce((a: number, x: any) => a + Number(x.precio_venta || 0), 0),
-      })
-      setComprasHoy((provs || []).filter((x: any) => (x.dias || []).includes(dia)).map((x: any) => ({
-        ...x,
-        total: (x.insumos || []).filter((i: any) => i.activo).reduce((a: number, i: any) => a + Number(i.precio) * Number(i.cantidad), 0) + Number(x.costo_fijo || 0),
-      })))
-      setPedidosCompraHoy(hechos || [])
-      setLoading(false)
-    }
-    load()
-  }, [])
-
-  const totalComprasHoy = comprasHoy.reduce((a, x) => a + x.total, 0)
-  const pedidoHecho = (id: string) => pedidosCompraHoy.some(x => x.proveedor_id === id)
-  const porPedir = comprasHoy.filter(x => !pedidoHecho(x.id)).length
-  const diasRestantes = (fecha: string) => differenceInDays(parseISO(fecha), new Date())
-
-  if (loading) return (
-    <div className='flex items-center justify-center h-screen text-gray-400 text-sm'>Cargando...</div>
+function Tarjeta({ titulo, icono, href, children, alerta }: any) {
+  return (
+    <Link href={href} className={`card block hover:border-purple-300 transition-colors ${alerta ? 'border-red-300' : ''}`}>
+      <div className='flex items-center justify-between mb-2'>
+        <span className='text-xs font-semibold text-gray-500 uppercase tracking-wide'>{icono} {titulo}</span>
+        <span className='text-gray-300 text-sm'>›</span>
+      </div>
+      {children}
+    </Link>
   )
+}
+function Dato({ n, t, color = '' }: any) {
+  return <div><div className={`text-xl font-semibold tabular-nums ${color}`}>{n}</div><div className='text-[11px] text-gray-500 leading-tight'>{t}</div></div>
+}
+
+export default function Dashboard() {
+  const [d, setD] = useState<any>(null)
+  const [editMeta, setEditMeta] = useState(false)
+  const [metaTxt, setMetaTxt] = useState('')
+
+  async function load() {
+    const hoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10)
+    const mesIni = hoy.slice(0, 8) + '01'
+    const dia = new Date(hoy + 'T12:00:00Z').getUTCDay()
+    const [ventas, activos, prog, crm, cots, wa, avisos, provs, hechos, mats, ajuste, nomE, nomP] = await Promise.all([
+      supabase.from('pedidos').select('precio_venta, grupo, numero').neq('estado', 'cancelado').gte('fecha_pedido', mesIni).lte('fecha_pedido', hoy),
+      supabase.from('pedidos').select('id, precio_venta, abono, fecha_entrega, estado').not('estado', 'in', '(entregado,cancelado)'),
+      supabase.from('programacion_produccion').select('etapa_actual, pedido:pedidos(estado)'),
+      supabase.from('crm_prospectos').select('etapa, created_at, proximo_seguimiento'),
+      supabase.from('cotizaciones').select('estado, total, created_at'),
+      supabase.from('wa_mensajes').select('telefono, direccion, created_at').gte('created_at', hoy + 'T05:00:00Z'),
+      supabase.from('historial_estados').select('pedido_id').gte('created_at', hoy + 'T05:00:00Z').or('nota.ilike.Reprogramado%,nota.ilike.Fecha de entrega%confirmada%,nota.ilike.Mensaje personalizado%'),
+      supabase.from('compra_proveedores').select('id, nombre, dias').eq('activo', true),
+      supabase.from('compra_pedidos').select('proveedor_id').eq('fecha', hoy),
+      supabase.from('materiales').select('nombre, stock_actual, stock_minimo, unidad'),
+      supabase.from('ajustes').select('valor').eq('clave', 'meta_ventas_mes').maybeSingle(),
+      supabase.from('nom_empleados').select('id, salario').eq('activo', true),
+      supabase.from('nom_pagos').select('empleado_id, periodo, total').gte('periodo', mesIni),
+    ])
+    const act = activos.data || []
+    const vMes = (ventas.data || []).reduce((a: number, x: any) => a + Number(x.precio_venta || 0), 0)
+    const compras = new Set((ventas.data || []).map((x: any) => x.grupo || x.numero)).size
+    const enProg = (prog.data || []).filter((x: any) => x.pedido && !['entregado', 'cancelado'].includes(x.pedido.estado))
+    const leads = crm.data || []
+    const abiertos = leads.filter((x: any) => ['nuevo', 'contactado', 'cotizado', 'negociando'].includes(x.etapa))
+    const provHoy = (provs.data || []).filter((x: any) => (x.dias || []).includes(dia))
+    const pedidosHoy = new Set((hechos.data || []).map((x: any) => x.proveedor_id))
+    const bajos = (mats.data || []).filter((m: any) => Number(m.stock_minimo) > 0 && Number(m.stock_actual) <= Number(m.stock_minimo))
+    // Próximo pago de nómina (días 5 y 20)
+    const [y, m, dd] = hoy.split('-').map(Number)
+    const sig = dd <= 5 ? `${hoy.slice(0, 8)}05` : dd <= 20 ? `${hoy.slice(0, 8)}20` : new Date(Date.UTC(y, m, 5)).toISOString().slice(0, 10)
+    const emps = nomE.data || []
+    const pagadosSig = (nomP.data || []).filter((x: any) => x.periodo === sig).length
+    setD({
+      hoy, vMes, compras, meta: Number(ajuste.data?.valor || 0),
+      diaMes: dd, diasMes: new Date(Date.UTC(y, m, 0)).getUTCDate(),
+      activos: act.length,
+      vencidos: act.filter((x: any) => String(x.fecha_entrega || '') < hoy).length,
+      porCobrar: act.reduce((a: number, x: any) => a + Math.max(0, Number(x.precio_venta || 0) - Number(x.abono || 0)), 0),
+      cola: enProg.filter((x: any) => x.etapa_actual === 'cola').length,
+      fabrica: enProg.filter((x: any) => !['cola', 'despacho', 'completado'].includes(x.etapa_actual)).length,
+      listos: enProg.filter((x: any) => x.etapa_actual === 'despacho').length,
+      leadsMes: leads.filter((x: any) => String(x.created_at) >= mesIni).length,
+      leadsHoy: leads.filter((x: any) => String(x.created_at) >= hoy + 'T05:00:00').length,
+      abiertos: abiertos.length,
+      seguimientos: abiertos.filter((x: any) => x.proximo_seguimiento && x.proximo_seguimiento <= hoy).length,
+      ganadosMes: leads.filter((x: any) => x.etapa === 'ganado' && String(x.created_at) >= mesIni).length,
+      cotAbiertas: (cots.data || []).filter((x: any) => x.estado === 'enviada'),
+      waHoy: new Set((wa.data || []).filter((x: any) => x.direccion === 'entrante').map((x: any) => x.telefono)).size,
+      avisadosHoy: new Set((avisos.data || []).map((x: any) => x.pedido_id)).size,
+      provHoy, pedidosHoy, bajos,
+      nomina: { fecha: sig, total: emps.reduce((a: number, e: any) => a + Number(e.salario || 0) / 2, 0), pagados: pagadosSig, de: emps.length },
+    })
+  }
+  useEffect(() => { load() }, [])
+
+  async function guardarMeta() {
+    const v = Number(metaTxt.replace(/\D/g, '')) || 0
+    await supabase.from('ajustes').upsert({ clave: 'meta_ventas_mes', valor: String(v) })
+    setEditMeta(false); load()
+  }
+
+  if (!d) return <div className='flex items-center justify-center h-screen text-gray-400 text-sm'>Cargando...</div>
+  const pctVentas = d.meta ? Math.round(d.vMes / d.meta * 100) : 0
+  const proyeccion = d.diaMes ? d.vMes / d.diaMes * d.diasMes : 0
+  const ritmoEsperado = d.meta ? d.meta * d.diaMes / d.diasMes : 0
+  const vaBien = d.vMes >= ritmoEsperado
+  const valorCot = d.cotAbiertas.reduce((a: number, x: any) => a + Number(x.total || 0), 0)
+  const faltaPedir = d.provHoy.filter((p: any) => !d.pedidosHoy.has(p.id))
+  const diasNom = Math.round((new Date(d.nomina.fecha + 'T12:00:00Z').getTime() - new Date(d.hoy + 'T12:00:00Z').getTime()) / 864e5)
 
   return (
-    <div className='p-6 max-w-6xl mx-auto'>
-
-      {/* Header */}
-      <div className='flex items-center justify-between mb-6'>
+    <div className='p-4 md:p-6 max-w-6xl mx-auto'>
+      <div className='flex items-center justify-between mb-4'>
         <div>
           <h1 className='text-xl font-medium text-gray-900'>Dashboard</h1>
-          <p className='text-sm text-gray-400 mt-0.5'>
-            {format(new Date(), "EEEE d 'de' MMMM, yyyy", { locale: es })}
-          </p>
+          <p className='text-sm text-gray-400 mt-0.5 capitalize'>{format(new Date(), "EEEE d 'de' MMMM, yyyy", { locale: es })}</p>
         </div>
-        <Link href='/pedidos/nuevo' className='btn btn-primary'>
-          <Plus size={15} /> Nuevo pedido
-        </Link>
+        <Link href='/pedidos/nuevo' className='btn btn-primary'><Plus size={15} /> Nuevo pedido</Link>
       </div>
 
-      {/* Meta de producción del día */}
-      <MetaDelDia />
-
-      {/* Buscador de pedidos */}
       <BuscadorPedido />
 
-      {/* Metric cards */}
-      <div className='grid grid-cols-2 md:grid-cols-4 gap-4 mb-6'>
-        <div className='card'>
-          <div className='flex items-center gap-2 mb-2'>
-            <ClipboardList size={15} className='text-gray-400' />
-            <span className='text-xs text-gray-400'>Pedidos activos</span>
-          </div>
-          <div className='text-2xl font-medium'>{resumen.activos}</div>
-        </div>
-        <div className='card'>
-          <div className='flex items-center gap-2 mb-2'>
-            <Wrench size={15} className='text-gray-400' />
-            <span className='text-xs text-gray-400'>En producción</span>
-          </div>
-          <div className='text-2xl font-medium'>{resumen.enProd}</div>
-        </div>
-        <Link href='/compras' className='card hover:border-amber-300 transition-colors'>
-          <div className='flex items-center gap-2 mb-2'>
-            <ShoppingCart size={15} className={porPedir > 0 ? 'text-amber-500' : 'text-gray-400'} />
-            <span className='text-xs text-gray-400'>Compras de hoy</span>
-          </div>
-          <div className='text-2xl font-medium'>{comprasHoy.length ? `$${(totalComprasHoy / 1e6).toFixed(1)}M` : '—'}</div>
-          <div className={`text-xs mt-0.5 ${porPedir > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-            {!comprasHoy.length ? 'Sin compras hoy' : porPedir > 0 ? `${porPedir} por pedir` : '✓ Todo pedido'}
-          </div>
-        </Link>
-        <Link href='/ventas' className='card hover:border-purple-300 transition-colors'>
-          <div className='flex items-center gap-2 mb-2'>
-            <DollarSign size={15} className='text-gray-400' />
-            <span className='text-xs text-gray-400'>Ventas del mes</span>
-          </div>
-          <div className='text-2xl font-medium'>${(resumen.ventasMes / 1_000_000).toFixed(1)}M</div>
-        </Link>
-      </div>
-
-      <div className='grid grid-cols-1 md:grid-cols-2 gap-5 mb-5'>
-        <div className='card'>
-          <div className='flex items-center justify-between mb-4'>
-            <h2 className='text-sm font-medium'>Pedidos recientes</h2>
-            <Link href='/pedidos' className='text-xs text-purple-600 hover:underline'>Ver todos</Link>
-          </div>
-          {pedidos.slice(0,6).map(p => (
-            <div key={p.id} className='flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0'>
-              <span className='text-xs font-medium text-gray-500 w-16'>{p.numero}</span>
-              <div className='flex-1 min-w-0'>
-                <p className='text-sm truncate'>{p.tipo_sofa} — {p.color}</p>
-                <p className='text-xs text-gray-400'>{(p.cliente as any)?.nombre}</p>
-              </div>
-              <EstadoBadge estado={p.estado} />
+      <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
+        <div>
+          {/* Ventas del mes vs meta */}
+          <div className='card mb-4'>
+            <div className='flex items-center justify-between mb-2'>
+              <Link href='/ventas' className='text-xs font-semibold text-gray-500 uppercase tracking-wide'>💰 Ventas de {format(new Date(), 'MMMM', { locale: es })} ›</Link>
+              <button type='button' className='text-xs text-purple-700 font-semibold' onClick={() => { setMetaTxt(d.meta ? String(d.meta) : ''); setEditMeta(!editMeta) }}>{d.meta ? 'Cambiar meta' : 'Poner meta'}</button>
             </div>
-          ))}
-          {pedidos.length === 0 && (
-            <p className='text-sm text-gray-400 py-4 text-center'>No hay pedidos aún. <Link href='/pedidos/nuevo' className='text-purple-600 underline'>Crear primero</Link></p>
-          )}
+            {editMeta && (
+              <div className='flex gap-2 mb-3'>
+                <input aria-label='Meta de ventas del mes' inputMode='numeric' placeholder='Ej: 150000000' value={metaTxt} onChange={e => setMetaTxt(e.target.value.replace(/\D/g, ''))} />
+                <button className='btn btn-primary' onClick={guardarMeta}>Guardar</button>
+              </div>
+            )}
+            <div className='flex items-end justify-between gap-3'>
+              <div>
+                <div className='text-3xl font-semibold tabular-nums'>{millones(d.vMes)}</div>
+                <div className='text-xs text-gray-500'>{d.compras} compras{d.compras ? ` · ticket promedio ${millones(d.vMes / d.compras)}` : ''}</div>
+              </div>
+              {d.meta > 0 && <div className={`text-3xl font-bold tabular-nums ${pctVentas >= 100 ? 'text-green-700' : vaBien ? 'text-green-700' : 'text-amber-600'}`}>{pctVentas}%</div>}
+            </div>
+            {d.meta > 0 ? (
+              <>
+                <div className='relative h-3 rounded-full bg-gray-100 overflow-hidden mt-3'>
+                  <div className={`h-full ${vaBien ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: Math.min(100, pctVentas) + '%' }} />
+                  <div className='absolute top-0 bottom-0 w-0.5 bg-gray-800' style={{ left: Math.min(100, d.diaMes / d.diasMes * 100) + '%' }} title='Dónde deberías ir hoy' />
+                </div>
+                <p className='text-xs text-gray-600 mt-2'>Meta {millones(d.meta)} · {vaBien ? '✅ vas por encima del ritmo' : `⚠ deberías ir en ${millones(ritmoEsperado)}`} · a este ritmo cierras en <b>{millones(proyeccion)}</b></p>
+              </>
+            ) : <p className='text-xs text-gray-500 mt-2'>Pon la meta del mes para ver cuánto llevas y la proyección al cierre.</p>}
+          </div>
+
+          {/* Producción de hoy */}
+          <MetaDelDia />
         </div>
 
-        <div className='card'>
-          <div className='flex items-center justify-between mb-4'>
-            <h2 className='text-sm font-medium'>Compras de hoy</h2>
-            <Link href='/compras' className='text-xs text-purple-600 hover:underline'>Ir a Compras</Link>
-          </div>
-          {comprasHoy.length === 0 ? (
-            <div className='text-sm text-gray-500 bg-gray-50 rounded-lg px-4 py-3'>Hoy no hay compras programadas.</div>
-          ) : (
-            comprasHoy.map(x => (
-              <Link key={x.id} href='/compras' className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 mb-2 ${pedidoHecho(x.id) ? 'bg-green-50' : 'bg-amber-50'}`}>
-                <div>
-                  <p className={`text-sm font-medium ${pedidoHecho(x.id) ? 'text-green-800' : 'text-amber-800'}`}>{x.nombre}</p>
-                  <p className={`text-xs ${pedidoHecho(x.id) ? 'text-green-700' : 'text-amber-700'}`}>{pedidoHecho(x.id) ? '✓ Pedido' : 'Por pedir'}</p>
-                </div>
-                <span className='text-sm font-semibold'>${Math.round(x.total).toLocaleString('es-CO')}</span>
-              </Link>
-            ))
-          )}
+        <div className='grid grid-cols-2 gap-4 content-start'>
+          <Tarjeta titulo='Producción' icono='🏭' href='/programacion'>
+            <div className='grid grid-cols-3 gap-2'>
+              <Dato n={d.cola} t='en cola' />
+              <Dato n={d.fabrica} t='en fábrica' />
+              <Dato n={d.listos} t='listos' color={d.listos ? 'text-green-700' : ''} />
+            </div>
+          </Tarjeta>
 
-          <h2 className='text-sm font-medium mt-5 mb-3'>Entregas próximas</h2>
-          {pedidos
-            .filter(p => p.estado !== 'entregado')
-            .sort((a,b) => new Date(a.fecha_entrega).getTime() - new Date(b.fecha_entrega).getTime())
-            .slice(0,4)
-            .map(p => {
-              const dias = diasRestantes(p.fecha_entrega)
-              return (
-                <div key={p.id} className='flex items-center gap-3 py-2 border-b border-gray-50 last:border-0'>
-                  <span className='text-xs font-medium text-gray-500 w-16'>{p.numero}</span>
-                  <span className='text-xs flex-1 truncate'>{p.tipo_sofa}</span>
-                  <span className={`text-xs font-medium ${dias <= 2 ? 'text-red-600' : dias <= 5 ? 'text-amber-600' : 'text-gray-500'}`}>
-                    {dias < 0 ? 'Vencido' : dias === 0 ? 'Hoy' : `${dias} días`}
-                  </span>
+          <Tarjeta titulo='Atención' icono='🎧' href='/atencion' alerta={d.vencidos > 0}>
+            <div className='grid grid-cols-3 gap-2'>
+              <Dato n={d.vencidos} t='fecha vencida' color={d.vencidos ? 'text-red-600' : 'text-green-700'} />
+              <Dato n={d.waHoy} t='escribieron hoy' />
+              <Dato n={d.avisadosHoy} t='avisados hoy' />
+            </div>
+          </Tarjeta>
+
+          <Tarjeta titulo='Leads' icono='🎯' href='/crm' alerta={d.seguimientos > 0}>
+            <div className='grid grid-cols-3 gap-2'>
+              <Dato n={d.leadsMes} t={`este mes${d.leadsHoy ? ` · ${d.leadsHoy} hoy` : ''}`} />
+              <Dato n={d.abiertos} t='abiertos' />
+              <Dato n={d.seguimientos} t='seguir hoy' color={d.seguimientos ? 'text-red-600' : ''} />
+            </div>
+          </Tarjeta>
+
+          <Tarjeta titulo='Cotizaciones' icono='📝' href='/cotizaciones'>
+            <div className='grid grid-cols-2 gap-2'>
+              <Dato n={d.cotAbiertas.length} t='enviadas sin cerrar' />
+              <Dato n={millones(valorCot)} t='en juego' />
+            </div>
+          </Tarjeta>
+
+          <Tarjeta titulo='Por cobrar' icono='💵' href='/despachos'>
+            <div className='grid grid-cols-2 gap-2'>
+              <Dato n={millones(d.porCobrar)} t={`saldos de ${d.activos} pedidos`} />
+              <Dato n={d.listos} t='listos para cobrar y despachar' color={d.listos ? 'text-green-700' : ''} />
+            </div>
+          </Tarjeta>
+
+          <Tarjeta titulo='Nómina' icono='👥' href='/nomina'>
+            <div className='grid grid-cols-2 gap-2'>
+              <Dato n={millones(d.nomina.total)} t={`${diasNom <= 0 ? 'hoy' : diasNom === 1 ? 'mañana' : `en ${diasNom} días`} (${Number(d.nomina.fecha.slice(8))}/${Number(d.nomina.fecha.slice(5, 7))})`} />
+              <Dato n={`${d.nomina.pagados}/${d.nomina.de}`} t='pagados' color={d.nomina.pagados >= d.nomina.de && d.nomina.de ? 'text-green-700' : ''} />
+            </div>
+          </Tarjeta>
+
+          <div className='col-span-2'>
+            <Tarjeta titulo='Compras' icono='🛒' href='/compras' alerta={faltaPedir.length > 0}>
+              {d.provHoy.length === 0 ? <p className='text-sm text-gray-500'>Hoy no hay compras programadas.</p> : (
+                <div className='flex flex-wrap gap-1.5'>
+                  {d.provHoy.map((p: any) => (
+                    <span key={p.id} className={`text-xs px-2 py-1 rounded-full font-medium ${d.pedidosHoy.has(p.id) ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>{d.pedidosHoy.has(p.id) ? '✓' : '⏳'} {p.nombre}</span>
+                  ))}
                 </div>
-              )
-          })}
+              )}
+              {faltaPedir.length > 0 && <p className='text-xs text-amber-700 mt-2'>Falta hacer el pedido a {faltaPedir.length} proveedor{faltaPedir.length > 1 ? 'es' : ''} hoy.</p>}
+              {d.bajos.length > 0 && (d.bajos.length <= 8
+                ? <p className='text-xs text-red-700 mt-2'>⚠ Bajo el mínimo: {d.bajos.map((m: any) => m.nombre).join(', ')}</p>
+                : <p className='text-xs text-gray-500 mt-2'>{d.bajos.length} materiales marcan bajo el mínimo en Materiales (revisa que el inventario esté al día).</p>)}
+            </Tarjeta>
+          </div>
         </div>
       </div>
     </div>
