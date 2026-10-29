@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { etiqueta, indice, siguiente, hoyISO, diaBogota, fCorta, ETAPAS_FAB } from '@/lib/etapas'
+import { etiqueta, indice, siguiente, hoyISO, diaBogota, ETAPAS_FAB, SIN_TELA, modeloMedida } from '@/lib/etapas'
 
 /* Mi trabajo (taller): cada encargado ve solo su sección y toca ✓ Terminé cuando acaba un sofá.
    El sofá pasa a la siguiente sección y la hora queda guardada (la base la registra sola). */
@@ -82,20 +82,22 @@ function Bloque({ titulo, children }) {
 }
 function Sofa({ it, s, borde, children }) {
   const urgente = it.prioridad === 'urgente' || it.prioridad === 'alta'
+  const { modelo, medida } = modeloMedida(it.ref)
+  const conTela = !SIN_TELA.includes(s)
   return (
     <div className='card py-3' style={{ borderLeft: `5px solid ${borde}` }}>
-      <div className='flex justify-between gap-2'>
+      <div className='flex justify-between items-start gap-2'>
         <div className='min-w-0'>
-          <div className='text-lg font-bold leading-tight'>{it.ref}{it.cantidad > 1 ? ` × ${it.cantidad}` : ''}</div>
-          <div className='text-sm text-gray-500'>{it.numero}</div>
-          <div className='text-sm mt-0.5'>Tela: <b>{it.tela || 'por definir'}</b>{s === 'corte_tela' && it.metros ? ` · ${Math.round(it.metros * 10) / 10} m` : ''}</div>
+          <div className='text-xl font-bold leading-tight'>{modelo}{it.cantidad > 1 ? <span className='text-gray-500'> × {it.cantidad}</span> : null}</div>
+          {medida && <div className='text-2xl font-extrabold' style={{ color: borde }}>{medida}</div>}
+          {conTela && <div className='text-base mt-1'>Tela: <b>{it.tela || 'por definir'}</b>{s === 'corte_tela' && it.metros ? <span className='text-gray-600'> · {Math.round(it.metros * 10) / 10} m</span> : null}</div>}
         </div>
-        <div className='text-right text-xs text-gray-500 flex-none'>
-          <div className='font-semibold text-gray-800'>Entrega {fCorta(it.entrega)}</div>
-          {urgente && <div className='text-red-600 font-bold uppercase mt-0.5'>⚠ {it.prioridad}</div>}
+        <div className='text-right flex-none'>
+          <div className='text-xs text-gray-400'>{it.numero}</div>
+          {urgente && <div className='text-xs text-red-600 font-bold uppercase mt-0.5'>⚠ {it.prioridad}</div>}
         </div>
       </div>
-      {it.obs && <p className='text-sm text-gray-700 mt-1 rounded bg-yellow-50 px-2 py-1'>📝 {it.obs}</p>}
+      {it.obs && <p className='text-sm text-gray-700 mt-2 rounded bg-yellow-50 px-2 py-1'>📝 {it.obs}</p>}
       {children}
     </div>
   )
