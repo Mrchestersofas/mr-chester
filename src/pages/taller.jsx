@@ -53,12 +53,6 @@ function Taller() {
     setCred(c); setDatos(data)
   }
 
-  async function empezar(it) {
-    const { error: e } = await supabase.rpc('taller_empezar', { p_usuario: cred.u, p_clave: cred.k, p_prog: it.id })
-    if (e) alert('No se pudo guardar: ' + e.message)
-    await cargar()
-  }
-
   async function mover(it, dir) {
     const { error: e } = await supabase.rpc('taller_avanzar', { p_usuario: cred.u, p_clave: cred.k, p_prog: it.id, p_dir: dir })
     if (e) alert('No se pudo mover: ' + e.message)
@@ -100,7 +94,7 @@ function Taller() {
                 </div>
               )}
               {u.rol !== 'jefe' && u.seccion && vista === 'mio' ? (
-                <MiTrabajo items={items} tiempos={datos?.tiempos || []} seccion={u.seccion} empezar={empezar} terminar={it => mover(it, 1)} />
+                <MiTrabajo items={items} tiempos={datos?.tiempos || []} seccion={u.seccion} terminar={it => mover(it, 1)} />
               ) : <VistaTaller
                 items={items}
                 secciones={secciones}
