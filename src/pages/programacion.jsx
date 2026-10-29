@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { marcarEntregado } from '@/lib/entregar'
 import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre, primerDiaPlan, esBogota } from '@/lib/planificador'
 
 /* Programación de fábrica: 3 cupos por día (sábado 2), por fecha de entrega prometida.
@@ -159,6 +160,7 @@ function Tarjeta({ p, onReprog, recargar }) {
         <Dato t='Prometida al cliente' v={f(p.prometida)} fuerte />
         {p.sobrecupo && enCola && <div className='col-span-2 text-xs text-amber-700'>⚠ Ese día quedó con más cupos de los que hay.</div>}
       </div>
+      <button type='button' className='text-xs text-gray-500 underline' onClick={async () => { if (await marcarEntregado([p.pedido])) recargar() }}>✓ Ya se entregó</button>
       {enCola && (
         <div className='flex gap-2 pt-1'>
           <button className='btn flex-1' onClick={onReprog}>📅 Reprogramar</button>
