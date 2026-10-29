@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Head from 'next/head'
 import { supabase } from '@/lib/supabase'
 import VistaTaller from '@/components/VistaTaller'
+import MiTrabajo from '@/components/MiTrabajo'
 import { SECCIONES, normalizar, etiqueta } from '@/lib/etapas'
 
 /* Taller: página para los encargados de sección y el jefe de producción.
@@ -15,6 +16,7 @@ function Taller() {
   const [datos, setDatos] = useState(null)
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(true)
+  const [vista, setVista] = useState('mio')
 
   async function cargar(c = cred) {
     if (!c) return
@@ -51,6 +53,12 @@ function Taller() {
     setCred(c); setDatos(data)
   }
 
+  async function empezar(it) {
+    const { error: e } = await supabase.rpc('taller_empezar', { p_usuario: cred.u, p_clave: cred.k, p_prog: it.id })
+    if (e) alert('No se pudo guardar: ' + e.message)
+    await cargar()
+  }
+
   async function mover(it, dir) {
     const { error: e } = await supabase.rpc('taller_avanzar', { p_usuario: cred.u, p_clave: cred.k, p_prog: it.id, p_dir: dir })
     if (e) alert('No se pudo mover: ' + e.message)
@@ -80,17 +88,26 @@ function Taller() {
           : (
             <>
               <div className='flex justify-between items-center mb-4'>
-                <p className='text-lg'>Hola <b>{u.nombre}</b></p>
+                <p className='text-lg'>Hola <b>{String(u.nombre).split(' ')[0]}</b></p>
                 <button className='btn text-sm' onClick={() => cargar()}>↻ Actualizar</button>
               </div>
               {error && <p className='mb-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700'>{error}</p>}
-              <VistaTaller
+              {u.rol !== 'jefe' && u.seccion && (
+                <div className='flex gap-2 mb-4'>
+                  {[['mio', '🔨 Mi trabajo'], ['semana', '📅 Semana']].map(([k, l]) => (
+                    <button key={k} onClick={() => setVista(k)} className={`flex-1 px-3 py-2.5 text-sm font-semibold rounded-lg ${vista === k ? 'text-white' : 'bg-white border border-gray-200 text-gray-600'}`} style={vista === k ? { background: NEGRO } : {}}>{l}</button>
+                  ))}
+                </div>
+              )}
+              {u.rol !== 'jefe' && u.seccion && vista === 'mio' ? (
+                <MiTrabajo items={items} tiempos={datos?.tiempos || []} seccion={u.seccion} empezar={empezar} terminar={it => mover(it, 1)} />
+              ) : <VistaTaller
                 items={items}
                 secciones={secciones}
                 modo={u.rol === 'jefe' ? 'general' : u.seccion === 'corte_tela' ? 'corte' : 'secciones'}
                 puedeMover={it => !!u.puede_mover && (u.rol === 'jefe' || it.etapa === u.seccion)}
                 mover={mover}
-              />
+              />}
             </>
           )}
       </main>
