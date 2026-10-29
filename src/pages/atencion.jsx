@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { marcarEntregado } from '@/lib/entregar'
 import { planificar, hoyColombia, sumarHabiles, diaAnteriorHabil, fechasDisponibles, cupoLibre, capacidad, primerDiaPlan } from '@/lib/planificador'
 
 /* Atención al cliente.
@@ -303,6 +304,7 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
               <button className='btn w-full' disabled={lleno} onClick={() => { navigator.clipboard?.writeText(texto); reprogramar() }}>Copiar mensaje y reprogramar</button>
             </div>
           )}
+          <button type='button' className='w-full text-sm text-gray-600 underline pt-1' onClick={async () => { if (await marcarEntregado(x.items.map(i => i.pedido))) { setHecho(true); setTimeout(recargar, 800) } }}>✓ Ya se entregó (sacarlo de la lista)</button>
           {modo !== 'personal' && <p className='text-xs text-gray-500'>Al tocarlo, la fecha de entrega cambia en el ERP{x.items.length > 1 ? ` para los ${x.items.length} productos` : ''}, queda anotado en el historial y el cliente la ve en su seguimiento.</p>}
         </div>
       )}
