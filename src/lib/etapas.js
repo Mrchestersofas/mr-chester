@@ -71,3 +71,55 @@ export function textoSemana(items, lunes) {
 export function linkSemanaJefe(items, lunes) {
   return `https://wa.me/${WHATSAPP_JEFE}?text=${encodeURIComponent(textoSemana(items, lunes))}`
 }
+
+// ---------- Programación del día por operario (WhatsApp) ----------
+// Cargo en Nómina → sección. "Jefe de taller" recibe el general.
+export const CARGO_SECCION = { 'esqueletería': 'estructura', 'esqueleteria': 'estructura', 'espumado': 'espumado', 'corte y costura': 'corte_tela', 'tapizado': 'tapizado' }
+const diaLargo = iso => { const d = new Date(iso + 'T12:00:00Z'); return `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][d.getUTCDay()]} ${d.getUTCDate()} ${MESES[d.getUTCMonth()]}` }
+const unidades = l => l.reduce((a, it) => a + (Number(it.cantidad) || 1), 0)
+const porEntrega = (a, b) => String(a.entrega || '9').localeCompare(String(b.entrega || '9')) || String(a.numero).localeCompare(String(b.numero))
+
+/** Lo que una sección debe hacer el día `dia` + lo que ya está en su sección y viene de días anteriores. */
+export function trabajoSeccion(items, s, dia) {
+  const j = indice(s)
+  const hoy = items.filter(it => it.inicios[s] === dia && indice(it.etapa) <= j).sort(porEntrega)
+  const ids = new Set(hoy.map(it => it.id))
+  const atrasados = items.filter(it => !ids.has(it.id) && it.inicios[s] && it.inicios[s] < dia &&
+    (it.etapa === s || (s === 'estructura' && it.etapa === 'cola'))).sort(porEntrega)
+  return { hoy, atrasados }
+}
+
+function lineaItem(it, s) {
+  const extra = s === 'corte_tela' && it.metros ? ` · ${it.metros} m` : ''
+  const obs = it.obs ? `\n   📝 ${String(it.obs).replace(/\s+/g, ' ').slice(0, 140)}` : ''
+  return `• ${it.numero} · ${it.ref}${it.cantidad > 1 ? ` ×${it.cantidad}` : ''} · ${it.tela || 'tela por definir'}${extra} · entrega ${fCorta(it.entrega)}${it.prioridad === 'urgente' ? ' · ⚠️ URGENTE' : ''}${obs}`
+}
+
+export function textoDiaSeccion(items, s, dia, nombre) {
+  const { hoy, atrasados } = trabajoSeccion(items, s, dia)
+  const l = [`📅 *PROGRAMACIÓN MR. CHESTER*`, `*${etiqueta(s)}* · ${diaLargo(dia)}`, ``,
+    `Hola${nombre ? ' ' + nombre.split(' ')[0] : ''} 👋 ${hoy.length ? 'esto es lo que toca:' : 'para este día no hay nada nuevo programado en tu sección.'}`, ``]
+  hoy.forEach(it => l.push(lineaItem(it, s)))
+  if (hoy.length) l.push(``, `Total: *${unidades(hoy)} unidad${unidades(hoy) === 1 ? '' : 'es'}*`)
+  if (atrasados.length) { l.push(``, `⏳ *Pendientes de días anteriores (${atrasados.length})*`); atrasados.forEach(it => l.push(lineaItem(it, s))) }
+  l.push(``, `Cuando termines cada uno, márcalo en: ${URL_TALLER}`, `¡Gracias por tu trabajo! 💪`)
+  return l.join('\n')
+}
+
+export function textoDiaGeneral(items, dia, nombre) {
+  const l = [`📅 *PROGRAMACIÓN GENERAL MR. CHESTER*`, `${diaLargo(dia).replace(/^./, c => c.toUpperCase())}`, ``, `Hola${nombre ? ' ' + nombre.split(' ')[0] : ''} 👋 este es el plan del taller:`]
+  const delDia = items.filter(it => SECCIONES.some(s => it.inicios[s.key] === dia) && indice(it.etapa) < indice('despacho')).sort(porEntrega)
+  if (delDia.length) {
+    l.push(``, `*SOFÁS DEL DÍA (${unidades(delDia)} u.)*`)
+    delDia.forEach(it => l.push(lineaItem(it) + (it.etapa !== 'cola' ? `\n   ▸ va en ${etiqueta(it.etapa)}` : '')))
+  } else l.push(``, `No hay sofás nuevos programados para este día.`)
+  const pend = SECCIONES.map(({ key }) => [key, trabajoSeccion(items, key, dia).atrasados]).filter(([, a]) => a.length)
+  if (pend.length) {
+    l.push(``, `⏳ *PENDIENTES DE DÍAS ANTERIORES*`)
+    pend.forEach(([key, a]) => l.push(`• ${etiqueta(key)} (${a.length}): ${a.map(it => it.numero).join(', ')}`))
+  }
+  l.push(``, `Ver detalle: ${URL_TALLER}`)
+  return l.join('\n')
+}
+
+export const linkWhatsApp = (tel, texto) => `https://wa.me/57${String(tel || '').replace(/\D/g, '').replace(/^57(?=\d{10}$)/, '')}?text=${encodeURIComponent(texto)}`
