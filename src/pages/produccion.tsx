@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import VistaTaller from '@/components/VistaTaller'
+import EnviarDia from '@/components/EnviarDia'
 import { SECCIONES, normalizar, siguiente, anterior, estadoPedido, etiqueta, linkSemanaJefe, lunesDe, hoyISO, sumar } from '@/lib/etapas'
 
 /* Producción (ERP): Joseph / jefe de producción ven todas las secciones y mueven los pedidos.
@@ -50,6 +51,7 @@ export default function Produccion() {
         </div>
         <Link href='/programacion' className='btn text-sm whitespace-nowrap'>📅 Programación</Link>
       </div>
+      <EnviarDia items={items} />
       <div className='grid grid-cols-2 gap-2 mb-4'>
         <a className='btn text-center text-sm' href={linkSemanaJefe(items, lunesDe(hoyISO()))} target='_blank' rel='noreferrer'>📲 Semana actual a Luis</a>
         <a className='btn text-center text-sm' href={linkSemanaJefe(items, sumar(lunesDe(hoyISO()), 7))} target='_blank' rel='noreferrer'>📲 Próxima semana a Luis</a>
