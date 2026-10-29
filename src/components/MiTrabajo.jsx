@@ -39,7 +39,7 @@ export default function MiTrabajo({ items, tiempos = [], seccion, terminar }) {
         <Cifra n={unidades(hechos)} t='Terminados hoy' c='#15803d' />
       </div>
 
-      <Bloque titulo={`📋 Por hacer (${porHacer.length})`}>
+      <Bloque titulo={`📋 Por hacer (${unidades(porHacer)})`}>
         {porHacer.length === 0 && <p className='card text-center text-gray-500 py-6'>No tienes sofás pendientes en tu sección. 🙌</p>}
         {porHacer.map(it => (
           <Sofa key={it.id} it={it} s={s} borde={color}>
@@ -90,7 +90,7 @@ function Sofa({ it, s, borde, children }) {
         <div className='min-w-0'>
           <div className='text-xl font-bold leading-tight'>{modelo}{it.cantidad > 1 ? <span className='text-gray-500'> × {it.cantidad}</span> : null}</div>
           {medida && <div className='text-2xl font-extrabold' style={{ color: borde }}>{medida}</div>}
-          {conTela && <div className='text-base mt-1'>Tela: <b>{it.tela || 'por definir'}</b>{s === 'corte_tela' && it.metros ? <span className='text-gray-600'> · {Math.round(it.metros * 10) / 10} m</span> : null}</div>}
+          {conTela && <div className='text-base mt-1'>Tela: <b>{it.tela || 'por definir'}</b>{s === 'corte_tela' && it.metros ? <span className='text-gray-600 whitespace-nowrap'> · {(Math.round(it.metros * 10) / 10).toLocaleString('es-CO')} m de tela</span> : null}</div>}
         </div>
         <div className='text-right flex-none'>
           <div className='text-xs text-gray-400'>{it.numero}</div>
