@@ -10,6 +10,8 @@ import { ETAPAS_FAB, etiqueta, normalizar, hoyISO, fCorta, modeloMedida, indice 
 const ICONO = { cola: '📋', estructura: '🪵', espumado: '🧽', corte_tela: '✂️', tapizado: '🛋️', terminado: '✨', despacho: '🚚' }
 const TITULO = { cola: 'Para hoy', despacho: 'Listos' }
 const hora = ts => new Date(ts).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' })
+// "maria fernanda lopez gomez" → "Maria Lopez"
+const nombreCorto = n => { const p = String(n || '').trim().split(/\s+/).map(x => x.charAt(0).toUpperCase() + x.slice(1).toLowerCase()); return p.length > 2 ? `${p[0]} ${p[p.length >= 4 ? 2 : 1]}` : p.join(' ') }
 const unidades = l => l.reduce((a, x) => a + (Number(x.cantidad) || 1), 0)
 
 export default function FlujoFabrica({ tv = false }) {
@@ -24,7 +26,7 @@ export default function FlujoFabrica({ tv = false }) {
     const hoy = hoyISO()
     const [pp, pt] = await Promise.all([
       supabase.from('programacion_produccion')
-        .select('*, pedido:pedidos(numero, tipo_sofa, material, cantidad, fecha_entrega, prioridad, estado)')
+        .select('*, pedido:pedidos(numero, tipo_sofa, material, cantidad, fecha_entrega, prioridad, estado, cliente:clientes(nombre))')
         .neq('etapa_actual', 'completado'),
       supabase.from('prod_tiempos').select('id, seccion, nombre, fin, prog_id, pedido:pedidos(numero, tipo_sofa, cantidad)')
         .gte('fin', new Date(hoy + 'T00:00:00-05:00').toISOString()).order('fin', { ascending: false }),
@@ -183,9 +185,11 @@ function Sofa({ it, col, tv, C, nuevo, abierto, alternar, hoy }) {
         <span className={`${tv ? 'text-base' : 'text-xs'} font-semibold`} style={{ color: col.color }}>{medida || ' '}</span>
         <span className={`${tv ? 'text-xs' : 'text-[10px]'}`} style={{ color: C.suave }}>{it.numero}</span>
       </div>
+      {it.cliente && <div className={`${tv ? 'text-sm' : 'text-[11px]'} truncate`} style={{ color: C.suave }} title={it.cliente}>👤 {nombreCorto(it.cliente)}</div>}
       {(urgente || atrasado) && <div className={`${tv ? 'text-xs' : 'text-[10px]'} font-bold text-red-500 uppercase`}>{urgente ? `⚠ ${it.prioridad}` : '⏰ entrega vencida'}</div>}
       {abierto && (
         <div className={`${tv ? 'text-sm' : 'text-[11px]'} mt-1 pt-1 border-t space-y-0.5`} style={{ borderColor: C.borde, color: C.suave }}>
+          {it.cliente && <div>Cliente: <b style={{ color: C.texto }}>{it.cliente}</b></div>}
           <div>Tela: <b style={{ color: C.texto }}>{it.tela || '—'}</b></div>
           <div>Entrega: <b style={{ color: C.texto }}>{fCorta(it.entrega)}</b></div>
           {it.dia && <div>Programado: {fCorta(it.dia)}</div>}
