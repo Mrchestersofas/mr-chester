@@ -1,87 +1,53 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { etiqueta, indice, siguiente, hoyISO, diaBogota, fCorta, ETAPAS_FAB } from '@/lib/etapas'
 
-/* Mi trabajo (taller): cada encargado ve solo su sección.
-   ▶ Empezar guarda la hora de inicio; ✓ Terminé guarda la hora de fin y pasa el sofá a la siguiente sección. */
+/* Mi trabajo (taller): cada encargado ve solo su sección y toca ✓ Terminé cuando acaba un sofá.
+   El sofá pasa a la siguiente sección y la hora queda guardada (la base la registra sola). */
 
-const hora = ts => ts ? new Date(ts).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }) : '—'
 export function duracion(min) {
   if (min == null || min < 0) return '—'
   if (min < 60) return `${Math.round(min)} min`
   const h = Math.floor(min / 60), m = Math.round(min % 60)
   return `${h} h${m ? ` ${m} min` : ''}`
 }
-const minutos = (a, b) => a && b ? (new Date(b) - new Date(a)) / 60000 : null
 
-export default function MiTrabajo({ items, tiempos = [], seccion, empezar, terminar }) {
-  const [, setTick] = useState(0)
+export default function MiTrabajo({ items, tiempos = [], seccion, terminar }) {
   const [ocupado, setOcupado] = useState(null)
-  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 60000); return () => clearInterval(t) }, [])
-
   const hoy = hoyISO()
   const s = seccion, j = indice(s), sig = siguiente(s)
   const color = ETAPAS_FAB.find(e => e.key === s)?.color || '#111827'
-  const abierto = {}
-  tiempos.filter(t => t.seccion === s && !t.fin).forEach(t => { abierto[t.prog_id] = t })
 
   // En mi sección: lo que está en mi etapa. En Esqueletería también lo programado (cola) hasta hoy.
   const mios = items.filter(it => it.etapa === s || (s === 'estructura' && it.etapa === 'cola' && it.dia && it.dia <= hoy))
   const orden = (a, b) => String(a.inicios[s] || '9').localeCompare(String(b.inicios[s] || '9')) || String(a.entrega || '9').localeCompare(String(b.entrega || '9'))
-  const trabajando = mios.filter(it => abierto[it.id]).sort(orden)
-  const porHacer = mios.filter(it => !abierto[it.id]).sort((a, b) => (b.prioridad === 'urgente') - (a.prioridad === 'urgente') || orden(a, b))
+  const porHacer = mios.sort((a, b) => (b.prioridad === 'urgente') - (a.prioridad === 'urgente') || orden(a, b))
   const vienen = items.filter(it => indice(it.etapa) < j && it.inicios[s] && it.inicios[s] <= hoy && !mios.includes(it)).sort(orden)
-  const hechos = tiempos.filter(t => t.seccion === s && t.fin && diaBogota(t.fin) === hoy).sort((a, b) => String(b.fin).localeCompare(String(a.fin)))
+  const hechos = tiempos.filter(t => t.seccion === s && t.fin && diaBogota(t.fin) === hoy)
   const unidades = l => l.reduce((a, x) => a + (Number(x.cantidad) || 1), 0)
 
-  async function hacer(it, accion) {
-    if (accion === 'fin' && !confirm(`¿Terminaste ${it.numero} · ${it.ref}?\n\nPasa a ${etiqueta(sig)}.`)) return
+  async function listo(it) {
+    if (!confirm(`¿Terminaste ${it.numero} · ${it.ref}?\n\nPasa a ${etiqueta(sig)}.`)) return
     setOcupado(it.id)
-    if (accion === 'inicio') await empezar(it); else await terminar(it)
+    await terminar(it)
     setOcupado(null)
   }
 
   return (
     <div className='space-y-5'>
-      <div className='grid grid-cols-3 gap-2 text-center'>
-        <Cifra n={unidades(trabajando)} t='Trabajando' c='#b45309' />
+      <div className='grid grid-cols-2 gap-2 text-center'>
         <Cifra n={unidades(porHacer)} t='Por hacer' c={color} />
         <Cifra n={unidades(hechos)} t='Terminados hoy' c='#15803d' />
       </div>
 
-      {trabajando.length > 0 && (
-        <Bloque titulo='🔨 Trabajando ahora'>
-          {trabajando.map(it => {
-            const t = abierto[it.id]
-            return (
-              <Sofa key={it.id} it={it} s={s} borde='#f59e0b'>
-                <p className='text-sm text-amber-800 mt-1'>Empezaste a las <b>{hora(t.inicio)}</b> · lleva {duracion(minutos(t.inicio, new Date().toISOString()))}</p>
-                <button className='w-full mt-2 rounded-xl py-3 font-bold text-white bg-green-700 disabled:opacity-50' disabled={ocupado === it.id} onClick={() => hacer(it, 'fin')}>
-                  {ocupado === it.id ? 'Guardando…' : `✓ Terminé → pasa a ${etiqueta(sig)}`}
-                </button>
-              </Sofa>
-            )
-          })}
-        </Bloque>
-      )}
-
       <Bloque titulo={`📋 Por hacer (${porHacer.length})`}>
         {porHacer.length === 0 && <p className='card text-center text-gray-500 py-6'>No tienes sofás pendientes en tu sección. 🙌</p>}
-        {porHacer.map(it => {
-          const atrasado = it.inicios[s] && it.inicios[s] < hoy
-          return (
-            <Sofa key={it.id} it={it} s={s} borde={atrasado ? '#dc2626' : color}>
-              {atrasado && <p className='text-xs font-semibold text-red-700 mt-1'>⏳ Estaba para el {fCorta(it.inicios[s])}</p>}
-              <div className='flex gap-2 mt-2'>
-                <button className='flex-1 rounded-xl py-3 font-bold text-white disabled:opacity-50' style={{ background: '#1a1a1a' }} disabled={ocupado === it.id} onClick={() => hacer(it, 'inicio')}>
-                  {ocupado === it.id ? 'Guardando…' : '▶ Empezar'}
-                </button>
-                {it.etapa === s && (
-                  <button className='flex-1 rounded-xl py-3 font-bold border-2 border-green-700 text-green-800 disabled:opacity-50' disabled={ocupado === it.id} onClick={() => hacer(it, 'fin')}>✓ Ya lo terminé</button>
-                )}
-              </div>
-            </Sofa>
-          )
-        })}
+        {porHacer.map(it => (
+          <Sofa key={it.id} it={it} s={s} borde={color}>
+            <button className='w-full mt-2 rounded-xl py-3 font-bold text-white bg-green-700 disabled:opacity-50' disabled={ocupado === it.id} onClick={() => listo(it)}>
+              {ocupado === it.id ? 'Guardando…' : `✓ Terminé → pasa a ${etiqueta(sig)}`}
+            </button>
+          </Sofa>
+        ))}
       </Bloque>
 
       {vienen.length > 0 && (
@@ -98,9 +64,8 @@ export default function MiTrabajo({ items, tiempos = [], seccion, empezar, termi
       {hechos.length > 0 && (
         <Bloque titulo={`✅ Terminados hoy (${unidades(hechos)})`}>
           {hechos.map((t, i) => (
-            <div key={i} className='flex items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm'>
-              <span className='min-w-0 truncate'><b>{t.numero}</b> · {t.ref}{t.cantidad > 1 ? ` × ${t.cantidad}` : ''}{t.nombre ? <span className='text-gray-500'> · {t.nombre.split(' ')[0]}</span> : null}</span>
-              <span className='text-xs text-green-800 whitespace-nowrap'>{hora(t.fin)}{t.inicio ? ` · ${duracion(minutos(t.inicio, t.fin))}` : ''}</span>
+            <div key={i} className='rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm'>
+              ✓ <b>{t.numero}</b> · {t.ref}{t.cantidad > 1 ? ` × ${t.cantidad}` : ''}
             </div>
           ))}
         </Bloque>
