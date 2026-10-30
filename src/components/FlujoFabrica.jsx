@@ -76,7 +76,7 @@ export default function FlujoFabrica({ tv = false }) {
   const enFabrica = unidades(items.filter(it => !['cola', 'despacho'].includes(it.etapa)))
   const listosHoy = unidades(hechos.filter(h => h.seccion === 'terminado').map(h => h.pedido || {}))
   const programadosHoy = unidades(items.filter(it => it.dia === hoy))
-  const max = tv ? 8 : 5
+  const max = tv ? 4 : 5
 
   const C = tv
     ? { fondo: '#0b0b0f', tarjeta: '#17171f', borde: '#2a2a35', texto: '#f5f5f5', suave: '#9ca3af' }
@@ -94,9 +94,9 @@ export default function FlujoFabrica({ tv = false }) {
       `}</style>
 
       {/* Encabezado con cifras grandes */}
-      <div className={`flex flex-wrap items-end justify-between gap-3 ${tv ? 'mb-6' : 'mb-4'}`}>
+      <div className={`flex flex-wrap items-end justify-between gap-3 ${tv ? 'mb-3' : 'mb-4'}`}>
         <div>
-          {!tv && <div className='text-xs font-semibold uppercase tracking-widest' style={{ color: C.suave }}>🏭 Fábrica en vivo</div>}
+          <div className={`${tv ? 'text-sm' : 'text-xs'} font-semibold uppercase tracking-widest`} style={{ color: C.suave }}>🏭 Fábrica en vivo</div>
           {!tv && <div className='text-xs' style={{ color: C.suave }}>Se actualiza solo cuando el taller marca ✓ Terminé · <a href='/tv' target='_blank' rel='noreferrer' className='font-semibold text-purple-700'>📺 Ver en pantalla grande</a></div>}
         </div>
         <div className={`flex ${tv ? 'gap-8' : 'gap-5'}`}>
@@ -137,7 +137,7 @@ export default function FlujoFabrica({ tv = false }) {
       </div>
 
       {/* Últimos movimientos */}
-      <div className={tv ? 'mt-6' : 'mt-4'}>
+      <div className={tv ? 'mt-4' : 'mt-4'}>
         <div className={`${tv ? 'text-sm' : 'text-xs'} font-semibold uppercase tracking-widest mb-2`} style={{ color: C.suave }}>⚡ Últimos movimientos de hoy</div>
         {hechos.length === 0 ? (
           <p className={tv ? 'text-lg' : 'text-sm'} style={{ color: C.suave }}>Todavía nadie ha marcado ✓ Terminé hoy.</p>
@@ -163,7 +163,7 @@ export default function FlujoFabrica({ tv = false }) {
 function Cifra({ n, t, tv, c, color }) {
   return (
     <div className='text-right'>
-      <div className={`${tv ? 'text-6xl' : 'text-3xl'} font-extrabold tabular-nums leading-none`} style={{ color: color || c.texto }}>{n}</div>
+      <div className={`${tv ? 'text-5xl' : 'text-3xl'} font-extrabold tabular-nums leading-none`} style={{ color: color || c.texto }}>{n}</div>
       <div className={`${tv ? 'text-sm' : 'text-[11px]'} uppercase tracking-wide mt-1`} style={{ color: c.suave }}>{t}</div>
     </div>
   )
