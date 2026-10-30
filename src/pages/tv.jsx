@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { PERMITIDOS } from '@/components/Layout'
 import FlujoFabrica from '@/components/FlujoFabrica'
 import VentasEnVivo from '@/components/VentasEnVivo'
+import LeadsEnVivo from '@/components/LeadsEnVivo'
 
 /* Pantalla para el televisor: la fábrica en vivo, en grande y en oscuro.
    Se abre en el navegador del TV con la sesión del ERP iniciada. */
@@ -12,6 +13,12 @@ import VentasEnVivo from '@/components/VentasEnVivo'
 function TV() {
   const [sesion, setSesion] = useState(undefined)
   const [ahora, setAhora] = useState(new Date())
+  const [pagina, setPagina] = useState(0)
+  const [pausa, setPausa] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => { if (Date.now() > pausa) setPagina(p => (p + 1) % 2) }, 25000)
+    return () => clearInterval(t)
+  }, [pausa])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSesion(data.session))
@@ -57,8 +64,19 @@ function TV() {
           <button onClick={pantallaCompleta} className='rounded-lg px-3 py-2 text-sm border border-gray-700 text-gray-300' aria-label='Pantalla completa'>⛶</button>
         </div>
       </header>
-      <VentasEnVivo tv />
-      <FlujoFabrica tv />
+      {/* Dos pantallas que se turnan cada 25 s: Comercial (ventas + leads) y Fábrica. Toca los puntos para cambiar. */}
+      <div style={{ display: pagina === 0 ? 'block' : 'none' }}>
+        <VentasEnVivo tv onVenta={() => { setPagina(0); setPausa(Date.now() + 30000) }} />
+        <LeadsEnVivo tv />
+      </div>
+      <div style={{ display: pagina === 1 ? 'block' : 'none' }}>
+        <FlujoFabrica tv />
+      </div>
+      <div className='fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-2'>
+        {['Comercial', 'Fábrica'].map((t, i) => (
+          <button key={t} onClick={() => { setPagina(i); setPausa(Date.now() + 120000) }} className='rounded-full px-3 py-1 text-xs border' style={{ borderColor: pagina === i ? '#C9A84C' : '#333', color: pagina === i ? '#C9A84C' : '#777' }}>{t}</button>
+        ))}
+      </div>
     </div>
   )
 }
