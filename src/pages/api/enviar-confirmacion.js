@@ -202,7 +202,7 @@ export default async function handler(req, res) {
   <tr>
     <td style="background-color:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
       <p style="margin:0 0 4px;color:#C9A84C;font-size:11px;letter-spacing:2px;font-family:Arial,sans-serif;">MR. CHESTER EXPORT S.A.S.</p>
-      <p style="margin:0 0 4px;color:#555;font-size:11px;font-family:Arial,sans-serif;">Fábrica: Calle 161 #92-21, Bogotá · Centro de Experiencia: Cra 19A #85-69, Bogotá</p>
+      <p style="margin:0 0 4px;color:#555;font-size:11px;font-family:Arial,sans-serif;">Fábrica: Cra 99 #155-21, Bogotá · Centro de Experiencia: Cra 19A #85-69, Bogotá</p>
       <p style="margin:8px 0 0;color:#444;font-size:11px;font-family:Arial,sans-serif;">Este es un correo automático de confirmación. Por favor no responda a este mensaje.</p>
     </td>
   </tr>
