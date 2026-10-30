@@ -9,7 +9,7 @@ import { sumarHabiles } from '@/lib/planificador'
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-const FABRICA = 'Calle 161 #92-21, Bogotá'
+const FABRICA = 'Cra 99 #155-21, Bogotá'
 const pesos = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
 const num = n => Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })
 
