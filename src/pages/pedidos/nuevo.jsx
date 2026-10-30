@@ -789,7 +789,7 @@ async function dibujarComprobante(pedido, cliente, lista = []) {
   g.fillText('MR. CHESTER EXPORT S.A.S.', W / 2, H - 125)
   g.fillStyle = '#bdbdbd'; g.font = `24px ${sans}`
   g.fillText('Centro de Experiencia: Cra 19A #85-69, Bogotá', W / 2, H - 82)
-  g.fillText('Fábrica: Calle 161 #92-21, Bogotá', W / 2, H - 46)
+  g.fillText('Fábrica: Cra 99 #155-21, Bogotá', W / 2, H - 46)
 
   // Fecha de emisión
   g.textAlign = 'center'; g.fillStyle = GRIS; g.font = `22px ${sans}`
