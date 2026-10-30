@@ -376,7 +376,7 @@ function Transportador({ x, elegidos, saldo, por, setPor, tel, setTel }) {
       saldo > 0 ? `💰 *Saldo pendiente: $${Math.round(saldo).toLocaleString('es-CO')}* — confirmar pago antes de entregar` : `✅ Pagado — no cobrar`,
       obs.trim() ? `📝 ${obs.trim()}` : null,
       ``,
-      `Recoger en fábrica: Calle 161 #92-21, Bogotá`,
+      `Recoger en fábrica: Cra 99 #155-21, Bogotá`,
       `Al entregar, avísanos por aquí. ¡Gracias!`,
     ].filter(l => l !== null).join('\n')
   }
