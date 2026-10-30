@@ -56,6 +56,7 @@ export default async function handler(req, res) {
         const boton = m.interactive?.button_reply?.id || m.interactive?.list_reply?.id || m.button?.payload || null
         const txt = m.text?.body || m.interactive?.button_reply?.title || m.button?.text || (m.type !== 'text' ? `[${m.type}]` : '')
         await db.from('wa_mensajes').insert({ wa_id: m.id, telefono: soloNum(m.from), nombre: nombres[m.from] || null, direccion: 'entrante', texto: txt })
+        try { await registrarLead(db, m, nombres[m.from], txt) } catch (e) { console.error('Lead WhatsApp:', e) }
 
         try {
           const respuestas = await responder(db, { telefono: m.from, nombre: nombres[m.from], texto: m.text?.body || '', boton })
@@ -71,4 +72,22 @@ export default async function handler(req, res) {
     }
   }
   res.status(200).json({ ok: true })
+}
+
+// Cada número nuevo que escribe queda como lead en el CRM (si no es cliente ni prospecto ya).
+// Si llegó desde un anuncio de Meta (click-to-WhatsApp), queda con canal "pauta" y el anuncio en la nota.
+async function registrarLead(db, m, nombre, txt) {
+  const tel = soloNum(m.from), ult = tel.slice(-10)
+  const { data: p } = await db.from('crm_prospectos').select('id').ilike('telefono', `%${ult}`).limit(1)
+  if (p && p.length) return
+  const { data: c } = await db.from('clientes').select('id').ilike('telefono', `%${ult}`).limit(1)
+  if (c && c.length) return
+  const ref = m.referral || null
+  const anuncio = ref ? (ref.headline || ref.body || ref.source_url || 'anuncio') : null
+  const { data: nuevo } = await db.from('crm_prospectos').insert({
+    nombre: nombre || `WhatsApp ${ult}`, telefono: ult, canal: ref ? 'pauta' : 'whatsapp',
+    interes: anuncio ? String(anuncio).slice(0, 120) : null, notas: String(txt || '').slice(0, 300) || null,
+    proximo_seguimiento: new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10),
+  }).select('id').single()
+  if (nuevo) await db.from('crm_actividades').insert({ prospecto_id: nuevo.id, tipo: 'nota', texto: ref ? `Llegó por un anuncio: ${anuncio}` : 'Escribió por WhatsApp (automático)' })
 }
