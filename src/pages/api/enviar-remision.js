@@ -52,7 +52,7 @@ function html(r, c) {
   </td></tr>
   <tr><td style="background:#111;padding:20px 40px;text-align:center;border-radius:0 0 8px 8px;">
     <p style="margin:0 0 4px;color:#C9A84C;font-size:11px;letter-spacing:2px;font-family:Arial,sans-serif;">MR. CHESTER EXPORT S.A.S.</p>
-    <p style="margin:0;color:#555;font-size:11px;font-family:Arial,sans-serif;">Fábrica: Calle 161 #92-21 · Centro de Experiencia: Cra 19A #85-69, Bogotá</p>
+    <p style="margin:0;color:#555;font-size:11px;font-family:Arial,sans-serif;">Fábrica: Cra 99 #155-21 · Centro de Experiencia: Cra 19A #85-69, Bogotá</p>
   </td></tr>
 </table></td></tr></table></body></html>`
 }
