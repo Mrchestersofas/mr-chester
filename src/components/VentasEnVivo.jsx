@@ -19,7 +19,7 @@ function diasHabiles(y, m, hasta) {
   return n
 }
 
-export default function VentasEnVivo({ tv = false }) {
+export default function VentasEnVivo({ tv = false, onVenta = null }) {
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
   const [fiesta, setFiesta] = useState(null)
@@ -45,6 +45,7 @@ export default function VentasEnVivo({ tv = false }) {
       if (nuevas.length) {
         const total = nuevas.reduce((a, p) => a + Number(p.precio_venta || 0), 0)
         setFiesta({ total, cliente: nombreCorto(nuevas[0].cliente?.nombre), modelo: nuevas[0].tipo_sofa, n: nuevas.length, t: Date.now() })
+        if (onVenta) onVenta()
       }
     }
     vistos.current = ids
@@ -168,8 +169,7 @@ export default function VentasEnVivo({ tv = false }) {
         </div>
 
         {/* Leads, WhatsApp, cotizaciones */}
-        <div className={`grid grid-cols-3 gap-3 ${tv ? 'col-span-5' : 'col-span-2 md:col-span-5'}`}>
-          <Numero n={d.leads.length} t='Leads nuevos hoy' icono='🎯' tv={tv} C={C} />
+        <div className={`grid grid-cols-2 gap-3 ${tv ? 'col-span-5' : 'col-span-2 md:col-span-5'}`}>
           <Numero n={waHoy} t='Escribieron por WhatsApp' icono='💬' tv={tv} C={C} />
           <Numero n={d.cots.length} t={d.cots.length ? `Cotizaciones · ${millones(d.cots.reduce((a, x) => a + Number(x.total || 0), 0))}` : 'Cotizaciones hoy'} icono='📝' tv={tv} C={C} />
         </div>
