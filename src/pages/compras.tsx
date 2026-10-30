@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { sumarHabiles } from '@/lib/planificador'
 
 /* Compras simples: cada proveedor tiene días fijos y una lista con la cantidad de siempre.
    El día que toca, se ajusta la cantidad si hace falta, se pide por WhatsApp y queda registrado.
@@ -35,7 +36,7 @@ export default function Compras() {
   }
   useEffect(() => { cargar() }, [])
 
-  const tabs = [['hoy', 'Hoy'], ['semana', 'Semana'], ['telas', 'Telas'], ['historial', 'Historial'], ['proveedores', 'Proveedores']]
+  const tabs = [['hoy', 'Hoy'], ['semana', 'Semana'], ['telas', '🧵 Telas'], ['historial', 'Historial'], ['proveedores', 'Proveedores']]
   return (
     <div className='p-4 max-w-2xl mx-auto'>
       <h1 className='text-xl font-medium mb-4'>Compras</h1>
@@ -208,56 +209,146 @@ function TabSemana({ provs }) {
 }
 
 /* ---------------- TELAS ---------------- */
+/* La tela se pide un día hábil antes de producir: hoy se pide lo que se fabrica mañana.
+   Lista por proveedor con los metros de cada tela, para mandar por WhatsApp; queda registrado en el historial. */
 
 const ANTES_DE_CORTE = ['cola', 'estructura', 'espumado']
+const sinTilde = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 
 function TabTelas() {
-  const [filas, setFilas] = useState(null)
-  useEffect(() => {
-    (async () => {
-      const [{ data: prog }, { data: productos }, { data: telas }] = await Promise.all([
-        supabase.from('programacion_produccion').select('etapa_actual, pedido:pedidos(numero, tipo_sofa, material, cantidad, fecha_entrega)').in('etapa_actual', ANTES_DE_CORTE),
-        supabase.from('productos').select('referencia, metros_tela'),
-        supabase.from('materiales').select('nombre, proveedor').eq('unidad', 'metro'),
-      ])
-      const metrosRef = Object.fromEntries((productos || []).map(p => [p.referencia, Number(p.metros_tela) || 0]))
-      const provTela = Object.fromEntries((telas || []).map(t => [t.nombre, t.proveedor]))
-      const porTela = {}
-      ;(prog || []).forEach(({ pedido }) => {
-        if (!pedido) return
-        const tela = pedido.material || 'Sin tela definida'
-        const m = (metrosRef[pedido.tipo_sofa] || 0) * (Number(pedido.cantidad) || 1)
-        porTela[tela] = porTela[tela] || { tela, proveedor: provTela[tela] || '', metros: 0, pedidos: [], sinMedida: false }
-        porTela[tela].metros += m
-        if (!metrosRef[pedido.tipo_sofa]) porTela[tela].sinMedida = true
-        porTela[tela].pedidos.push(pedido)
-      })
-      setFilas(Object.values(porTela).sort((a, b) => b.metros - a.metros))
-    })()
-  }, [])
+  const hoy = hoyISO()
+  const [dia, setDia] = useState(sumarHabiles(hoy, 1))
+  const [datos, setDatos] = useState(null)
+  const [msg, setMsg] = useState({})
 
-  if (!filas) return <p className='text-gray-500'>Calculando…</p>
-  if (!filas.length) return <div className='card text-center py-10 text-gray-500'>No hay pedidos pendientes de corte de tela.</div>
-  const total = filas.reduce((s, f) => s + f.metros, 0)
+  async function cargar() {
+    const [{ data: prog }, { data: productos }, { data: telas }, { data: provs }, { data: pedidos }] = await Promise.all([
+      supabase.from('programacion_produccion').select('id, etapa_actual, dia_produccion, pedido:pedidos(numero, tipo_sofa, material, cantidad, estado)').in('etapa_actual', ANTES_DE_CORTE),
+      supabase.from('productos').select('referencia, metros_tela'),
+      supabase.from('materiales').select('nombre, proveedor, costo_unitario').eq('unidad', 'metro'),
+      supabase.from('compra_proveedores').select('id, nombre, whatsapp, contacto'),
+      supabase.from('compra_pedidos').select('proveedor_nombre, items, created_at, fecha').gte('fecha', sumarDias(hoy, -10)),
+    ])
+    setDatos({ prog: prog || [], productos: productos || [], telas: telas || [], provs: provs || [], pedidos: pedidos || [] })
+  }
+  useEffect(() => { cargar() }, [])
+
+  if (!datos) return <p className='text-gray-500'>Calculando…</p>
+  const metrosRef = Object.fromEntries(datos.productos.map(p => [sinTilde(p.referencia), Number(p.metros_tela) || 0]))
+  // Si la referencia no está en Productos, se estima: poltrona 5,5 m, esquinero 14 m, o un Cheers de la misma medida (+1 m si es Picadilly)
+  function metrosDe(ref) {
+    const r = sinTilde(ref)
+    if (metrosRef[r]) return { m: metrosRef[r], estimado: false }
+    if (r.startsWith('poltrona')) return { m: 5.5, estimado: true }
+    if (r.startsWith('esquinero')) return { m: metrosRef['esquinero cheers'] || 14, estimado: true }
+    const med = (r.match(/(\d{3})/) || [])[1]
+    if (med && metrosRef['cheers ' + med]) return { m: metrosRef['cheers ' + med] + (r.includes('picadilly') || r.includes('piccadilly') ? 1 : 0), estimado: true }
+    return { m: 0, estimado: true }
+  }
+  const infoTela = Object.fromEntries(datos.telas.map(t => [sinTilde(t.nombre), t]))
+  const delDia = datos.prog.filter(f => f.dia_produccion === dia && f.pedido && !['entregado', 'cancelado'].includes(f.pedido.estado))
+  // ya pedidas: se marcan las telas de este día que ya se registraron
+  const yaPedido = new Set()
+  datos.pedidos.forEach(x => (x.items || []).forEach(i => { if (i.para_dia === dia) yaPedido.add(sinTilde(i.nombre)) }))
+
+  const grupos = {}
+  delDia.forEach(({ pedido }) => {
+    const tela = (pedido.material || '').trim() || 'Tela por definir'
+    const info = infoTela[sinTilde(tela)]
+    const prov = info?.proveedor || 'Proveedor por definir'
+    const md = metrosDe(pedido.tipo_sofa)
+    const m = md.m * (Number(pedido.cantidad) || 1)
+    grupos[prov] = grupos[prov] || {}
+    const g = grupos[prov][tela] = grupos[prov][tela] || { tela, metros: 0, precio: Number(info?.costo_unitario || 0), sofas: [], sinMedida: false, estimados: [] }
+    g.metros += m
+    if (!md.m) g.sinMedida = true
+    else if (md.estimado) g.estimados.push(pedido.tipo_sofa)
+    g.sofas.push(`${pedido.numero} ${pedido.tipo_sofa}${pedido.cantidad > 1 ? ' ×' + pedido.cantidad : ''}`)
+  })
+  const redondo = m => Math.ceil(m * 2) / 2 // a medio metro hacia arriba
+  const diasOpc = [sumarHabiles(hoy, 1), sumarHabiles(hoy, 2), sumarHabiles(hoy, 3)]
+
+  function texto(prov, lista) {
+    const pv = datos.provs.find(x => sinTilde(x.nombre) === sinTilde(prov))
+    const saludo = pv?.contacto ? String(pv.contacto).split(' ')[0] : prov !== 'Proveedor por definir' ? prov : ''
+    return [
+      `Hola${saludo ? ' ' + saludo : ''} 👋, buen día. Te escribe Mr. Chester.`,
+      `Para producir el ${fechaTexto(dia)} necesitamos:`, ``,
+      ...lista.map(t => `• ${num(redondo(t.metros))} m — ${t.tela}`), ``,
+      `📍 Entrega en la fábrica: ${FABRICA}`, `¡Gracias!`,
+    ].join('\n')
+  }
+  async function pedir(prov, lista) {
+    const p = datos.provs.find(x => sinTilde(x.nombre) === sinTilde(prov))
+    const t = texto(prov, lista)
+    window.open(p?.whatsapp ? `https://wa.me/${telWa(p.whatsapp)}?text=${encodeURIComponent(t)}` : `https://wa.me/?text=${encodeURIComponent(t)}`, '_blank')
+    const items = lista.map(x => ({ nombre: x.tela, unidad: 'm', cantidad: redondo(x.metros), precio: x.precio, para_dia: dia }))
+    const { error } = await supabase.from('compra_pedidos').insert({
+      proveedor_id: p?.id || null, proveedor_nombre: prov, fecha: hoy, items, costo_fijo: 0,
+      total: items.reduce((a, i) => a + i.precio * i.cantidad, 0),
+    })
+    setMsg(m => ({ ...m, [prov]: error ? 'Se abrió WhatsApp, pero no quedó registrado: ' + error.message : 'ok' }))
+    cargar()
+  }
+  async function copiar(prov, lista) {
+    try { await navigator.clipboard.writeText(texto(prov, lista)); setMsg(m => ({ ...m, [prov]: 'copiado' })) } catch (e) {}
+  }
+
+  const provs = Object.entries(grupos)
+  const totalM = provs.reduce((a, [, g]) => a + Object.values(g).reduce((b, t) => b + redondo(t.metros), 0), 0)
   return (
     <div className='space-y-3'>
-      <p className='text-sm text-gray-600'>Metros de tela para los pedidos que todavía no se han cortado (en cola, estructura o espumado).</p>
-      {filas.map(f => (
-        <div key={f.tela} className='card'>
-          <div className='flex justify-between items-start gap-2'>
-            <div>
-              <div className='font-semibold'>{f.tela}</div>
-              {f.proveedor && <div className='text-xs text-gray-500'>{f.proveedor}</div>}
-            </div>
-            <div className='text-lg font-semibold whitespace-nowrap'>{num(f.metros)} m</div>
-          </div>
-          <div className='text-xs text-gray-500 mt-1'>
-            {f.pedidos.map(p => `${p.numero} ${p.tipo_sofa}${p.cantidad > 1 ? ' ×' + p.cantidad : ''}`).join(' · ')}
-          </div>
-          {f.sinMedida && <div className='text-xs text-amber-700 mt-1'>⚠ Hay una referencia sin metros de tela registrados.</div>}
+      <p className='text-sm text-gray-600'>La tela se pide un día hábil antes: hoy se pide lo que se fabrica el <b>{fechaTexto(sumarHabiles(hoy, 1))}</b>.</p>
+      <div className='flex gap-2'>
+        {diasOpc.map((d, k) => (
+          <button key={d} onClick={() => setDia(d)} className={`flex-1 px-2 py-2 text-sm rounded-lg capitalize ${dia === d ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+            {k === 0 ? 'Mañana · ' : ''}{fechaTexto(d).split(' de ')[0]}
+          </button>
+        ))}
+      </div>
+
+      {!delDia.length ? (
+        <div className='card text-center py-8 text-gray-500'>No hay sofás programados para el {fechaTexto(dia)} que estén antes de corte.</div>
+      ) : (<>
+        <div className='card flex justify-between items-center'>
+          <span className='text-sm text-gray-600'>{delDia.length} sofá{delDia.length === 1 ? '' : 's'} para el {fechaTexto(dia)}</span>
+          <span className='text-lg font-semibold'>{num(totalM)} m</span>
         </div>
-      ))}
-      <div className='card flex justify-between font-semibold'><span>Total</span><span>{num(total)} m</span></div>
+        {provs.map(([prov, g]) => {
+          const lista = Object.values(g).sort((a, b) => b.metros - a.metros)
+          const pedidaTodo = lista.every(t => yaPedido.has(sinTilde(t.tela)))
+          const pv = datos.provs.find(x => sinTilde(x.nombre) === sinTilde(prov))
+          return (
+            <div key={prov} className={`card space-y-2 ${pedidaTodo ? 'border-green-300' : ''}`}>
+              <div className='flex justify-between items-start gap-2'>
+                <div>
+                  <div className='font-semibold'>{prov}</div>
+                  <div className='text-xs text-gray-500'>{pv?.whatsapp ? `WhatsApp ${pv.whatsapp}` : 'Sin WhatsApp guardado: agrégalo en la pestaña Proveedores'}</div>
+                </div>
+                {pedidaTodo && <span className='text-xs px-2 py-1 rounded-full bg-green-100 text-green-800 font-semibold whitespace-nowrap'>✓ Ya pedida</span>}
+              </div>
+              {lista.map(t => (
+                <div key={t.tela} className='border-t border-gray-100 pt-2'>
+                  <div className='flex justify-between gap-2'>
+                    <span className='font-medium'>{yaPedido.has(sinTilde(t.tela)) ? '✓ ' : ''}{t.tela}</span>
+                    <span className='font-semibold whitespace-nowrap'>{num(redondo(t.metros))} m</span>
+                  </div>
+                  <div className='text-xs text-gray-500'>{t.sofas.join(' · ')}</div>
+                  {t.sinMedida && <div className='text-xs text-amber-700'>⚠ Hay una referencia sin metros de tela en Costos/Productos: revisa la cantidad.</div>}
+                  {t.estimados.length > 0 && <div className='text-xs text-amber-700'>≈ Metros estimados para {t.estimados.join(', ')} (no está en Productos).</div>}
+                </div>
+              ))}
+              <div className='flex gap-2 pt-1'>
+                <button className='btn btn-primary flex-1 justify-center' onClick={() => pedir(prov, lista)}>💬 Pedir por WhatsApp</button>
+                <button className='btn' onClick={() => copiar(prov, lista)}>{msg[prov] === 'copiado' ? '✓ Copiado' : 'Copiar'}</button>
+              </div>
+              {msg[prov] === 'ok' && <p className='text-xs text-green-700'>Quedó registrado en el historial.</p>}
+              {msg[prov] && !['ok', 'copiado'].includes(msg[prov]) && <p className='text-xs text-red-700'>{msg[prov]}</p>}
+            </div>
+          )
+        })}
+        <p className='text-xs text-gray-500'>Los metros se redondean a medio metro hacia arriba. El proveedor de cada tela sale de Materiales.</p>
+      </>)}
     </div>
   )
 }
