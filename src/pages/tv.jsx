@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { PERMITIDOS } from '@/components/Layout'
 import FlujoFabrica from '@/components/FlujoFabrica'
+import VentasEnVivo from '@/components/VentasEnVivo'
 
 /* Pantalla para el televisor: la fábrica en vivo, en grande y en oscuro.
    Se abre en el navegador del TV con la sesión del ERP iniciada. */
@@ -38,14 +39,14 @@ function TV() {
   const hora = ahora.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' })
 
   return (
-    <div style={fondo} className='px-6 py-5'>
-      <Head><title>Fábrica en vivo · Mr. Chester</title></Head>
-      <header className='flex items-center justify-between mb-6'>
+    <div style={fondo} className='px-6 py-4'>
+      <Head><title>En vivo · Mr. Chester</title></Head>
+      <header className='flex items-center justify-between mb-4'>
         <div className='flex items-center gap-4'>
           <img src='/logo-mrchester.png' alt='' style={{ height: 48, width: 56, objectFit: 'cover' }} />
           <div>
             <div style={{ color: '#C9A84C', fontFamily: 'Georgia, serif', fontWeight: 700, letterSpacing: 6, fontSize: 28, lineHeight: 1 }}>MR. CHESTER</div>
-            <div className='text-sm uppercase tracking-widest text-gray-400 mt-1'>Fábrica en vivo</div>
+            <div className='text-sm uppercase tracking-widest text-gray-400 mt-1'>Panel en vivo</div>
           </div>
         </div>
         <div className='flex items-center gap-6'>
@@ -56,6 +57,7 @@ function TV() {
           <button onClick={pantallaCompleta} className='rounded-lg px-3 py-2 text-sm border border-gray-700 text-gray-300' aria-label='Pantalla completa'>⛶</button>
         </div>
       </header>
+      <VentasEnVivo tv />
       <FlujoFabrica tv />
     </div>
   )
