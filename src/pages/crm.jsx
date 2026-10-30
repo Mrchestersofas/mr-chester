@@ -15,7 +15,7 @@ const ETAPAS = [
   { k: 'perdido', l: 'Perdido', c: '#b91c1c' },
 ]
 const ABIERTAS = ['nuevo', 'contactado', 'cotizado', 'negociando']
-const CANALES = [['whatsapp', 'WhatsApp', '🟢'], ['instagram', 'Instagram', '📸'], ['tienda', 'Tienda', '🏬'], ['web', 'Web', '🌐'], ['falabella', 'Falabella', '🛒'], ['referido', 'Referido', '🤝'], ['otro', 'Otro', '•']]
+const CANALES = [['pauta', 'Anuncio', '📣'], ['whatsapp', 'WhatsApp', '🟢'], ['instagram', 'Instagram', '📸'], ['tienda', 'Tienda', '🏬'], ['web', 'Web', '🌐'], ['falabella', 'Falabella', '🛒'], ['referido', 'Referido', '🤝'], ['otro', 'Otro', '•']]
 const MOTIVOS = ['Precio', 'Tiempo de entrega', 'Compró en otro lado', 'No respondió', 'Solo estaba mirando', 'Otro']
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
@@ -25,7 +25,7 @@ function f(iso) { if (!iso) return '—'; const d = new Date(String(iso).slice(0
 function hace(ts) { const d = Math.floor((Date.now() - new Date(ts).getTime()) / 86400000); return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : `hace ${d} días` }
 const pesos = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
 const etapa = k => ETAPAS.find(e => e.k === k) || ETAPAS[0]
-const canal = k => CANALES.find(c => c[0] === k) || CANALES[6]
+const canal = k => CANALES.find(c => c[0] === k) || CANALES[CANALES.length - 1]
 const soloNum = t => String(t || '').replace(/\D/g, '')
 const telWa = t => { const d = soloNum(t); return d.length === 10 ? '57' + d : d }
 const primerNombre = n => { const x = String(n || '').trim().split(/\s+/)[0] || ''; return x.charAt(0).toUpperCase() + x.slice(1).toLowerCase() }
