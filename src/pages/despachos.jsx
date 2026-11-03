@@ -410,7 +410,17 @@ function Transportador({ x, elegidos, saldo, por, setPor, tel, setTel }) {
 
 async function enviarRemision(remision, cliente) {
   try {
-    const r = await fetch('/api/enviar-remision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ remision, cliente }) })
+    // Para el correo de finanzas (Mónica): cómo se pagó cada pedido
+    const ids = remision.pedido_ids || (remision.items || []).map(i => i.pedido_id).filter(Boolean)
+    let finanzas = null
+    if (ids.length) {
+      const [{ data: pedidos }, { data: pagos }] = await Promise.all([
+        supabase.from('pedidos').select('id, numero, tipo_sofa, cantidad, precio_venta, abono, medio_pago, fecha_pedido, canal, factura_iva, observaciones').in('id', ids),
+        supabase.from('pedido_pagos').select('pedido_id, fecha, valor, medio_pago, nota, created_at').in('pedido_id', ids).order('fecha').order('created_at'),
+      ])
+      finanzas = { pedidos: pedidos || [], pagos: pagos || [] }
+    }
+    const r = await fetch('/api/enviar-remision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ remision, cliente, finanzas }) })
     return await r.json().catch(() => ({ ok: false, error: 'Respuesta inválida' }))
   } catch (e) { return { ok: false, error: 'No hubo conexión para enviar el correo.' } }
 }
