@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { sumarHabiles } from '@/lib/planificador'
+import { SECCIONES, etiqueta } from '@/lib/etapas'
 
 /* Compras simples: cada proveedor tiene días fijos y una lista con la cantidad de siempre.
    El día que toca, se ajusta la cantidad si hace falta, se pide por WhatsApp y queda registrado.
@@ -358,10 +359,18 @@ function TabTelas() {
 function TabHistorial() {
   const [lista, setLista] = useState(null)
   const [abierto, setAbierto] = useState(null)
+  const [recep, setRecep] = useState([])
   useEffect(() => {
     supabase.from('compra_pedidos').select('*').order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(150)
       .then(({ data }) => setLista(data || []))
+    supabase.from('compra_recepciones').select('*').gte('created_at', sumarDias(hoyISO(), -60)).order('created_at', { ascending: false })
+      .then(({ data }) => setRecep(data || []))
   }, [])
+  const recibido = (id, k) => recep.find(r => r.pedido_id === id && r.item_idx === k)
+  const sinPedido = recep.filter(r => !r.pedido_id)
+  // Solo los pedidos hechos desde que existe la recepción en el taller (3 nov 2026) tienen control de llegada
+  const conControl = x => x.created_at >= '2026-11-03'
+  const ESTADO = { recibido: ['✓ Recibido', 'bg-green-100 text-green-800'], parcial: ['⏳ Llegó una parte', 'bg-amber-100 text-amber-800'], pedido: ['⏳ Por recibir', 'bg-gray-100 text-gray-700'] }
   if (!lista) return <p className='text-gray-500'>Cargando…</p>
   if (!lista.length) return <div className='card text-center py-10 text-gray-500'>Todavía no hay pedidos registrados.</div>
 
@@ -370,18 +379,38 @@ function TabHistorial() {
   return (
     <div className='space-y-2'>
       <div className='card flex justify-between font-semibold'><span className='capitalize'>Total {MESES[Number(mes.slice(5)) - 1]}</span><span>{pesos(totalMes)}</span></div>
+      {sinPedido.length > 0 && (
+        <details className='card'>
+          <summary className='font-medium cursor-pointer'>📦 Llegó sin pedido en el sistema ({sinPedido.length})</summary>
+          <ul className='mt-2 text-sm space-y-1'>
+            {sinPedido.map(r => <li key={r.id} className='flex justify-between gap-2'><span>{num(r.cantidad_recibida)} {r.unidad || ''} · {r.nombre}{r.nota ? ` · ${r.nota}` : ''}</span><span className='text-xs text-gray-500 whitespace-nowrap'>{(r.recibido_por || '').split(' ')[0]} · {fechaTexto(hoyISO(new Date(r.created_at)))}</span></li>)}
+          </ul>
+        </details>
+      )}
       {lista.map(x => (
         <div key={x.id} className='card p-0 overflow-hidden'>
           <button className='w-full text-left p-3 flex justify-between gap-2' onClick={() => setAbierto(abierto === x.id ? null : x.id)} aria-expanded={abierto === x.id}>
             <div>
               <div className='font-medium'>{x.proveedor_nombre}</div>
               <div className='text-xs text-gray-500 capitalize'>{fechaTexto(x.fecha)} · {horaTexto(x.created_at)}</div>
+              {conControl(x) && ESTADO[x.estado] && <span className={`inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${ESTADO[x.estado][1]}`}>{ESTADO[x.estado][0]}</span>}
             </div>
             <div className='font-semibold whitespace-nowrap'>{pesos(x.total)}</div>
           </button>
           {abierto === x.id && (
             <ul className='border-t border-gray-100 px-3 py-2 text-sm space-y-0.5'>
-              {(x.items || []).map((i, k) => <li key={k} className='flex justify-between'><span>{num(i.cantidad)} {i.unidad} · {i.nombre}</span><span>{pesos(i.precio * i.cantidad)}</span></li>)}
+              {(x.items || []).map((i, k) => {
+                const r = conControl(x) ? recibido(x.id, k) : null
+                const distinto = r && Number(r.cantidad_recibida) !== Number(i.cantidad)
+                return (
+                  <li key={k}>
+                    <div className='flex justify-between'><span>{num(i.cantidad)} {i.unidad} · {i.nombre}</span><span>{pesos(i.precio * i.cantidad)}</span></div>
+                    {conControl(x) && (r
+                      ? <div className={`text-xs ${distinto ? 'text-amber-700 font-semibold' : 'text-green-700'}`}>✓ {distinto ? `Llegaron ${num(r.cantidad_recibida)} de ${num(i.cantidad)}` : 'Llegó'} · {(r.recibido_por || '').split(' ')[0]} · {horaTexto(r.created_at)} {fechaTexto(hoyISO(new Date(r.created_at)))}{r.nota ? ` · ${r.nota}` : ''}</div>
+                      : <div className='text-xs text-gray-500'>⏳ Por recibir{i.para_dia ? ' · Corte y costura' : ''}</div>)}
+                  </li>
+                )
+              })}
               {Number(x.costo_fijo) > 0 && <li className='flex justify-between text-gray-600'><span>Transporte</span><span>{pesos(x.costo_fijo)}</span></li>}
             </ul>
           )}
@@ -438,7 +467,7 @@ function EditarProveedor({ p, cerrar, recargar }) {
     }).eq('id', p.id)
     const filas = insumos.filter(i => i.nombre.trim()).map((i, k) => ({
       ...(i.id ? { id: i.id } : {}), proveedor_id: p.id, nombre: i.nombre.trim(), unidad: (i.unidad || '').trim() || null,
-      precio: Number(i.precio) || 0, cantidad: Number(i.cantidad) || 0, orden: k + 1, activo: true,
+      precio: Number(i.precio) || 0, cantidad: Number(i.cantidad) || 0, orden: k + 1, activo: true, seccion: i.seccion || null,
     }))
     const nuevos = filas.filter(x => !x.id), existentes = filas.filter(x => x.id)
     const r = await Promise.all([
@@ -485,6 +514,12 @@ function EditarProveedor({ p, cerrar, recargar }) {
                 <L t='Precio'><input inputMode='numeric' value={i.precio} onChange={e => setI(k, { precio: e.target.value.replace(/[^\d.]/g, '') })} /></L>
                 <L t='Cantidad'><input inputMode='decimal' value={i.cantidad} onChange={e => setI(k, { cantidad: e.target.value.replace(/[^\d.]/g, '') })} /></L>
               </div>
+              <L t='Lo recibe en el taller'>
+                <select value={i.seccion || ''} onChange={e => setI(k, { seccion: e.target.value })}>
+                  <option value=''>Sin asignar (lo recibe el jefe de producción)</option>
+                  {SECCIONES.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+                </select>
+              </L>
             </div>
           ))}
           <button type='button' className='btn w-full' onClick={() => setInsumos(a => [...a, { nombre: '', unidad: '', precio: '', cantidad: '1' }])}>+ Agregar insumo</button>
