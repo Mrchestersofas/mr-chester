@@ -19,6 +19,20 @@ function diaSemana(iso) { return new Date(iso + 'T12:00:00Z').getUTCDay() }
 function sumarDias(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 function fechaTexto(iso) { const d = new Date(iso + 'T12:00:00Z'); return `${DIAS[d.getUTCDay()].toLowerCase()} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}` }
 function horaTexto(ts) { const d = new Date(new Date(ts).getTime() - 5 * 3600 * 1000); const h = d.getUTCHours(); return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}` }
+
+// Mensaje para el chat de Consignaciones (Mónica): cuánto consignar y a qué cuenta
+function textoConsignacion(pv, nombre, valor, detalle) {
+  const l = ['💸 *CONSIGNACIÓN · Mr. Chester*', '', `Proveedor: *${nombre}*`, `Valor a consignar: *${pesos(valor)}*`, detalle, '']
+  if (pv?.numero_cuenta) {
+    l.push(`🏦 *${pv.banco || 'Banco'}*${pv.tipo_cuenta ? ' · Cuenta ' + String(pv.tipo_cuenta).toLowerCase() : ''}`, `N.º de cuenta: *${pv.numero_cuenta}*`)
+    if (pv.titular) l.push(`A nombre de: ${pv.titular}`)
+    if (pv.nit) l.push(`NIT / CC: ${pv.nit}`)
+  } else l.push('⚠️ Falta la cuenta de este proveedor en el ERP (Compras → Proveedores).')
+  if (pv?.pago_nota) l.push(`📝 ${pv.pago_nota}`)
+  return l.join('\n')
+}
+// Abre WhatsApp para escoger el chat (ej. "Consignaciones"); un enlace no puede abrir un grupo directamente
+const abrirConsignaciones = (t: string) => window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank')
 function telWa(t) { const d = String(t || '').replace(/\D/g, ''); return d.length === 10 ? '57' + d : d }
 function totalProveedor(p, cant) {
   return (p.insumos || []).reduce((s, i) => s + Number(i.precio) * Number(cant ? cant[i.id] ?? i.cantidad : i.cantidad), 0) + Number(p.costo_fijo || 0)
@@ -175,6 +189,11 @@ function TarjetaPedido({ p, fecha, hechos, alPedir }) {
       <button className='btn btn-primary w-full' onClick={pedir}>
         {ultimo ? 'Volver a pedir por WhatsApp' : p.whatsapp ? '🟢 Pedir por WhatsApp' : 'Registrar pedido'}
       </button>
+      {ultimo && (
+        <button className='btn w-full justify-center' onClick={() => abrirConsignaciones(textoConsignacion(p, p.nombre, ultimo.total, `Pedido del ${fechaTexto(fecha)}`))}>
+          💸 Mandar a Consignaciones · {pesos(ultimo.total)}
+        </button>
+      )}
       {msg?.ok && <p className='text-sm text-green-700'>✓ Pedido registrado.</p>}
       {msg?.error && <p className='text-sm text-red-700'>{msg.error}</p>}
       {Object.keys(cant).some(k => Number(cant[k]) !== Number(p.insumos.find(i => i.id === k)?.cantidad)) && (
@@ -227,7 +246,7 @@ function TabTelas() {
       supabase.from('programacion_produccion').select('id, etapa_actual, dia_produccion, pedido:pedidos(numero, tipo_sofa, material, cantidad, estado)').in('etapa_actual', ANTES_DE_CORTE),
       supabase.from('productos').select('referencia, metros_tela'),
       supabase.from('materiales').select('nombre, proveedor, costo_unitario').eq('unidad', 'metro'),
-      supabase.from('compra_proveedores').select('id, nombre, whatsapp, contacto'),
+      supabase.from('compra_proveedores').select('id, nombre, whatsapp, contacto, banco, tipo_cuenta, numero_cuenta, titular, nit, pago_nota'),
       supabase.from('compra_pedidos').select('proveedor_nombre, items, created_at, fecha').gte('fecha', sumarDias(hoy, -10)),
     ])
     setDatos({ prog: prog || [], productos: productos || [], telas: telas || [], provs: provs || [], pedidos: pedidos || [] })
@@ -267,7 +286,7 @@ function TabTelas() {
     g.sofas.push(`${pedido.numero} ${pedido.tipo_sofa}${pedido.cantidad > 1 ? ' ×' + pedido.cantidad : ''}`)
   })
   const redondo = m => Math.ceil(m * 2) / 2 // a medio metro hacia arriba
-  const diasOpc = [sumarHabiles(hoy, 1), sumarHabiles(hoy, 2), sumarHabiles(hoy, 3)]
+  const diasOpc = [hoy, sumarHabiles(hoy, 1), sumarHabiles(hoy, 2), sumarHabiles(hoy, 3)]
 
   function texto(prov, lista) {
     const pv = datos.provs.find(x => sinTilde(x.nombre) === sinTilde(prov))
@@ -303,7 +322,7 @@ function TabTelas() {
       <div className='flex gap-2'>
         {diasOpc.map((d, k) => (
           <button key={d} onClick={() => setDia(d)} className={`flex-1 px-2 py-2 text-sm rounded-lg capitalize ${dia === d ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
-            {k === 0 ? 'Mañana · ' : ''}{fechaTexto(d).split(' de ')[0]}
+            {k === 0 ? 'Hoy (urgente)' : <>{k === 1 ? 'Mañana · ' : ''}{fechaTexto(d).split(' de ')[0]}</>}
           </button>
         ))}
       </div>
@@ -344,6 +363,10 @@ function TabTelas() {
                 <button className='btn' onClick={() => copiar(prov, lista)}>{msg[prov] === 'copiado' ? '✓ Copiado' : 'Copiar'}</button>
               </div>
               {msg[prov] === 'ok' && <p className='text-xs text-green-700'>Quedó registrado en el historial.</p>}
+              {(pedidaTodo || msg[prov] === 'ok') && (() => {
+                const valor = lista.reduce((v, t) => v + redondo(t.metros) * t.precio, 0)
+                return <button className='btn w-full justify-center' onClick={() => abrirConsignaciones(textoConsignacion(pv, prov, valor, `Telas para producir el ${fechaTexto(dia)}`))}>💸 Mandar a Consignaciones · {pesos(valor)}</button>
+              })()}
               {msg[prov] && !['ok', 'copiado'].includes(msg[prov]) && <p className='text-xs text-red-700'>{msg[prov]}</p>}
             </div>
           )
@@ -450,7 +473,8 @@ function TabProveedores({ provs, recargar }) {
 }
 
 function EditarProveedor({ p, cerrar, recargar }) {
-  const [f, setF] = useState({ nombre: p.nombre, contacto: p.contacto || '', whatsapp: p.whatsapp || '', dias: p.dias || [], costo_fijo: String(p.costo_fijo || ''), activo: p.activo })
+  const [f, setF] = useState({ nombre: p.nombre, contacto: p.contacto || '', whatsapp: p.whatsapp || '', dias: p.dias || [], costo_fijo: String(p.costo_fijo || ''), activo: p.activo,
+    banco: p.banco || '', tipo_cuenta: p.tipo_cuenta || '', numero_cuenta: p.numero_cuenta || '', titular: p.titular || '', nit: p.nit || '', pago_nota: p.pago_nota || '' })
   const [insumos, setInsumos] = useState(p.insumos.map(i => ({ ...i, precio: String(i.precio), cantidad: String(i.cantidad) })))
   const [borrados, setBorrados] = useState([])
   const [guardando, setGuardando] = useState(false)
@@ -464,6 +488,8 @@ function EditarProveedor({ p, cerrar, recargar }) {
     const { error: e1 } = await supabase.from('compra_proveedores').update({
       nombre: f.nombre.trim(), contacto: f.contacto.trim() || null, whatsapp: f.whatsapp.replace(/\D/g, '') || null,
       dias: f.dias, costo_fijo: Number(f.costo_fijo) || 0, activo: f.activo,
+      banco: f.banco.trim() || null, tipo_cuenta: f.tipo_cuenta || null, numero_cuenta: f.numero_cuenta.replace(/[^\d-]/g, '') || null,
+      titular: f.titular.trim() || null, nit: f.nit.trim() || null, pago_nota: f.pago_nota.trim() || null,
     }).eq('id', p.id)
     const filas = insumos.filter(i => i.nombre.trim()).map((i, k) => ({
       ...(i.id ? { id: i.id } : {}), proveedor_id: p.id, nombre: i.nombre.trim(), unidad: (i.unidad || '').trim() || null,
@@ -489,6 +515,21 @@ function EditarProveedor({ p, cerrar, recargar }) {
         <L t='Contacto'><input value={f.contacto} onChange={e => setF({ ...f, contacto: e.target.value })} placeholder='Ej: Yerson' /></L>
         <L t='WhatsApp'><input inputMode='tel' value={f.whatsapp} onChange={e => setF({ ...f, whatsapp: e.target.value })} placeholder='Ej: 3158101692' /></L>
         <L t='Transporte por pedido'><input inputMode='numeric' value={f.costo_fijo} onChange={e => setF({ ...f, costo_fijo: e.target.value.replace(/\D/g, '') })} placeholder='0' /></L>
+      </div>
+      <div className='rounded-lg border border-gray-200 p-3 space-y-2'>
+        <div className='text-xs text-gray-500'>💸 Cuenta para consignar (sale en el mensaje de Consignaciones)</div>
+        <div className='grid grid-cols-1 sm:grid-cols-2 gap-2'>
+          <L t='Banco'><input value={f.banco} onChange={e => setF({ ...f, banco: e.target.value })} placeholder='Ej: Bancolombia' /></L>
+          <L t='Tipo de cuenta'>
+            <select value={f.tipo_cuenta} onChange={e => setF({ ...f, tipo_cuenta: e.target.value })}>
+              <option value=''>—</option><option>Ahorros</option><option>Corriente</option>
+            </select>
+          </L>
+          <L t='Número de cuenta'><input inputMode='numeric' value={f.numero_cuenta} onChange={e => setF({ ...f, numero_cuenta: e.target.value })} /></L>
+          <L t='A nombre de'><input value={f.titular} onChange={e => setF({ ...f, titular: e.target.value })} placeholder='Razón social o persona' /></L>
+          <L t='NIT o cédula'><input value={f.nit} onChange={e => setF({ ...f, nit: e.target.value })} /></L>
+          <L t='Nota de pago (opcional)'><input value={f.pago_nota} onChange={e => setF({ ...f, pago_nota: e.target.value })} placeholder='Ej: enviar soporte a este WhatsApp' /></L>
+        </div>
       </div>
       <div>
         <div className='text-xs text-gray-500 mb-1'>Días de compra</div>
