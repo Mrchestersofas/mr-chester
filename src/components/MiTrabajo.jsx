@@ -51,7 +51,7 @@ export default function MiTrabajo({ items, tiempos = [], seccion, terminar, cort
     setOcupado(it.id); await cortar(it, true); setOcupado(null)
   }
   const boton = it => {
-    const adelantada = indice(it.etapa) < j
+    const adelantada = paralelo && indice(it.etapa) < j
     return (
       <button className='w-full mt-2 rounded-xl py-3 font-bold text-white bg-green-700 disabled:opacity-50' disabled={ocupado === it.id} onClick={() => adelantada ? yaCortada(it) : listo(it)}>
         {ocupado === it.id ? 'Guardando…' : adelantada ? '✂️ Ya corté esta tela' : `✓ Terminé → pasa a ${etiqueta(sig)}`}
