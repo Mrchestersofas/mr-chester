@@ -57,8 +57,8 @@ function mensajeConfirmar(x, fecha) {
     `Hola, ${nombre} 👋`,
     '',
     listo
-      ? `Te contamos que tu *${productos}* (pedido ${x.g}) ya está terminado ✨ y te confirmamos la entrega para el *${fechaLarga(fecha)}* 📅`
-      : `Te escribimos para confirmarte que tu *${productos}* (pedido ${x.g}) tiene fecha de entrega el *${fechaLarga(fecha)}* 📅`,
+      ? `Te contamos que tu *${productos}* (pedido ${x.g}) ya está terminado ✨ y te confirmamos que sale de despacho el *${fechaLarga(fecha)}* 📅`
+      : `Te escribimos para confirmarte que tu *${productos}* (pedido ${x.g}) tiene fecha de despacho el *${fechaLarga(fecha)}* 📅`,
     '',
     'Unos días antes te contactamos por aquí para coordinar la hora de entrega 🚚',
     ...(saldo > 0 ? ['', `Te recordamos que el saldo de *${pesos(saldo)}* se paga antes del despacho.`] : []),
