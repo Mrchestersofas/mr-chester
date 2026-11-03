@@ -45,6 +45,7 @@ export function normalizar(f) {
     numero: p.numero, ref: p.tipo_sofa, tela: p.material, cantidad: p.cantidad, entrega: p.fecha_entrega,
     prioridad: p.prioridad, obs: p.observaciones, cliente: p.cliente?.nombre || null, estado: p.estado,
     metros: p.metros != null ? Number(p.metros) : null,
+    corteListo: f.corte_listo || null, // tela cortada por adelantado (antes de que llegue a Corte)
   }
 }
 
