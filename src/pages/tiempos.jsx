@@ -57,10 +57,12 @@ export default function Tiempos() {
   const ORD = SECCIONES.map(x => x.key)
   const desdeCuando = f => {
     const i = ORD.indexOf(f.seccion)
-    if (i > 0) {
-      const prev = filas.filter(g => g.prog_id === f.prog_id && g.seccion === ORD[i - 1] && g.fin && g.fin <= f.fin).sort((a, b) => b.fin.localeCompare(a.fin))[0]
-      return prev ? prev.fin : null
-    }
+    // Tapizado empieza cuando están listos el espumado y la tela cortada (lo último que terminó)
+    const previas = f.seccion === 'tapizado' ? ['corte_tela', 'espumado'] : i > 0 ? [ORD[i - 1]] : []
+    const prev = filas.filter(g => g.prog_id === f.prog_id && previas.includes(g.seccion) && g.fin && g.fin <= f.fin).sort((a, b) => b.fin.localeCompare(a.fin))[0]
+    if (prev) return prev.fin
+    // Esqueletería, o tela cortada por adelantado: desde lo anterior que terminó esa sección ese día (o las 8:00)
+    if (i > 0 && f.seccion !== 'corte_tela') return null
     const d = diaBogota(f.fin)
     const antes = filas.filter(g => g.seccion === f.seccion && g.id !== f.id && g.fin && g.fin < f.fin && diaBogota(g.fin) === d).sort((a, b) => b.fin.localeCompare(a.fin))[0]
     return antes ? antes.fin : new Date(`${d}T${String(H_INI).padStart(2, '0')}:00:00-05:00`).toISOString()
