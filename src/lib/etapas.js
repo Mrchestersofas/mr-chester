@@ -34,7 +34,11 @@ export function lunesDe(iso) { const w = new Date(iso + 'T12:00:00Z').getUTCDay(
 export function normalizar(f) {
   const p = f.pedido || f
   const inicios = {}
-  SECCIONES.forEach(s => { inicios[s.key] = diaBogota(f[`inicio_${s.key}`]) || f.dia_produccion || null })
+  // Si el pedido se reprogramó a un día posterior, ninguna sección puede empezar antes del día programado
+  SECCIONES.forEach(s => {
+    const ini = diaBogota(f[`inicio_${s.key}`]) || null, dia = f.dia_produccion || null
+    inicios[s.key] = ini && dia ? (ini < dia ? dia : ini) : (ini || dia)
+  })
   return {
     id: f.id, pedido_id: f.pedido_id, etapa: f.etapa_actual === 'control_calidad' ? 'terminado' : f.etapa_actual,
     dia: f.dia_produccion, inicios,
@@ -98,12 +102,12 @@ function lineaItem(it, s) {
 }
 
 export function textoDiaSeccion(items, s, dia, nombre) {
-  const { hoy, atrasados } = trabajoSeccion(items, s, dia)
+  // Solo lo programado para ese día (los pendientes de días anteriores no van en el mensaje)
+  const { hoy } = trabajoSeccion(items, s, dia)
   const l = [`📅 *PROGRAMACIÓN MR. CHESTER*`, `*${etiqueta(s)}* · ${diaLargo(dia)}`, ``,
     `Hola${nombre ? ' ' + nombre.split(' ')[0] : ''} 👋 ${hoy.length ? 'esto es lo que toca:' : 'para este día no hay nada nuevo programado en tu sección.'}`, ``]
   hoy.forEach(it => l.push(lineaItem(it, s)))
   if (hoy.length) l.push(``, `Total: *${unidades(hoy)} unidad${unidades(hoy) === 1 ? '' : 'es'}*`)
-  if (atrasados.length) { l.push(``, `⏳ *Pendientes de días anteriores (${atrasados.length})*`); atrasados.forEach(it => l.push(lineaItem(it, s))) }
   l.push(``, `Cuando termines cada uno, márcalo en: ${URL_TALLER}`, `¡Gracias por tu trabajo! 💪`)
   return l.join('\n')
 }
