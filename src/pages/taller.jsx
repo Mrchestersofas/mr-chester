@@ -3,6 +3,7 @@ import Head from 'next/head'
 import { supabase } from '@/lib/supabase'
 import VistaTaller from '@/components/VistaTaller'
 import MiTrabajo from '@/components/MiTrabajo'
+import Recibir from '@/components/Recibir'
 import { SECCIONES, normalizar, etiqueta, notaTaller } from '@/lib/etapas'
 
 /* Taller: página para los encargados de sección y el jefe de producción.
@@ -92,14 +93,15 @@ function Taller() {
                 <button className='btn text-sm' onClick={() => cargar()}>↻ Actualizar</button>
               </div>
               {error && <p className='mb-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700'>{error}</p>}
-              {u.rol !== 'jefe' && u.seccion && (
+              {(
                 <div className='flex gap-2 mb-4'>
-                  {[['mio', '🔨 Mi trabajo'], ['semana', '📅 Semana']].map(([k, l]) => (
+                  {(u.rol !== 'jefe' && u.seccion ? [['mio', '🔨 Mi trabajo'], ['semana', '📅 Semana'], ['recibir', '📦 Recibir']] : [['mio', '🏭 Producción'], ['recibir', '📦 Recibir']]).map(([k, l]) => (
                     <button key={k} onClick={() => setVista(k)} className={`flex-1 px-3 py-2.5 text-sm font-semibold rounded-lg ${vista === k ? 'text-white' : 'bg-white border border-gray-200 text-gray-600'}`} style={vista === k ? { background: NEGRO } : {}}>{l}</button>
                   ))}
                 </div>
               )}
-              {u.rol !== 'jefe' && u.seccion && vista === 'mio' ? (
+              {vista === 'recibir' ? <Recibir cred={cred} jefe={u.rol === 'jefe' || !u.seccion} />
+              : u.rol !== 'jefe' && u.seccion && vista === 'mio' ? (
                 <MiTrabajo items={items} tiempos={datos?.tiempos || []} seccion={u.seccion} terminar={it => mover(it, 1)} cortar={cortar} />
               ) : <VistaTaller
                 items={items}
