@@ -59,6 +59,12 @@ function Taller() {
     await cargar()
   }
 
+  async function cortar(it, deshacer = false) {
+    const { error: e } = await supabase.rpc('taller_cortar', { p_usuario: cred.u, p_clave: cred.k, p_prog: it.id, p_deshacer: deshacer })
+    if (e) alert('No se pudo guardar: ' + e.message)
+    await cargar()
+  }
+
   const u = datos?.usuario
   const items = (datos?.items || []).map(normalizar).map(it => ({ ...it, obs: notaTaller(it.obs) }))
   const secciones = u?.rol === 'jefe' || !u?.seccion ? SECCIONES.map(s => s.key) : [u.seccion]
@@ -94,7 +100,7 @@ function Taller() {
                 </div>
               )}
               {u.rol !== 'jefe' && u.seccion && vista === 'mio' ? (
-                <MiTrabajo items={items} tiempos={datos?.tiempos || []} seccion={u.seccion} terminar={it => mover(it, 1)} />
+                <MiTrabajo items={items} tiempos={datos?.tiempos || []} seccion={u.seccion} terminar={it => mover(it, 1)} cortar={cortar} />
               ) : <VistaTaller
                 items={items}
                 secciones={secciones}
