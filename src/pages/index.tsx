@@ -10,6 +10,7 @@ import { format, differenceInDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { ETAPAS } from '@/lib/programacion'
 import { diaAnteriorHabil } from '@/lib/planificador'
+import AvisosCelular from '@/components/AvisosCelular'
 
 const ETAPA_LABEL: Record<string, string> = {
   cola: 'En cola',
@@ -526,6 +527,7 @@ export default function Dashboard() {
 
       <BuscadorPedido />
 
+      <AvisosCelular />
       <VentasEnVivo />
       <LeadsEnVivo />
       <FlujoFabrica />
