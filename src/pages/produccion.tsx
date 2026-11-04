@@ -49,7 +49,7 @@ export default function Produccion() {
           <h1 className='text-xl font-medium'>Producción</h1>
           <p className='text-sm text-gray-500'>{items.filter(i => i.etapa !== 'cola' && i.etapa !== 'despacho').length} en fábrica · {items.filter(i => i.etapa === 'cola').length} programados · {items.filter(i => i.etapa === 'despacho').length} listos</p>
         </div>
-        <div className='flex flex-col gap-2'><Link href='/programacion' className='btn text-sm whitespace-nowrap'>📅 Programación</Link><Link href='/tiempos' className='btn text-sm whitespace-nowrap'>⏱ Tiempos</Link></div>
+        <div className='flex flex-col gap-2'><Link href='/programacion' className='btn text-sm whitespace-nowrap'>📅 Programación</Link><Link href='/tiempos' className='btn text-sm whitespace-nowrap'>⏱ Tiempos</Link><Link href='/estadisticas' className='btn text-sm whitespace-nowrap'>📊 Estadísticas</Link></div>
       </div>
       <EnviarDia items={items} />
       <div className='grid grid-cols-2 gap-2 mb-4'>
