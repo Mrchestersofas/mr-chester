@@ -76,7 +76,7 @@ function mensajeDespacho(x, fecha, hoy, medios) {
   const nombre = primerNombre(x.cliente?.nombre)
   const productos = x.items.map(i => i.pedido.tipo_sofa + (Number(i.pedido.cantidad) > 1 ? ` ×${i.pedido.cantidad}` : '')).join(' + ')
   const saldo = x.items.reduce((a, i) => a + Number(i.pedido.precio_venta || 0) - Number(i.pedido.abono || 0), 0)
-  const cuando = fecha === sumarHabiles(hoy, 1) || fecha === sumarDiasISO(hoy, 1) ? `*mañana, ${fechaLarga(fecha)}*` : `el *${fechaLarga(fecha)}*`
+  const cuando = fecha === hoy ? `*hoy, ${fechaLarga(fecha)},*` : fecha === sumarHabiles(hoy, 1) || fecha === sumarDiasISO(hoy, 1) ? `*mañana, ${fechaLarga(fecha)}*` : `el *${fechaLarga(fecha)}*`
   return [
     '♛ *MR. CHESTER* ♛',
     '',
@@ -223,7 +223,8 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
   const telWa = tel.length === 10 ? '57' + tel : tel
   const atraso = x.prometida && x.prometida < hoy ? dias(x.prometida, hoy) : 0
   // Cupo: el pedido se fabrica 1 día hábil antes de la fecha prometida; ese día debe tener cupo
-  const reprogramando = modo !== 'personal' && !!fecha && fecha !== actual && !x.listos
+  // El aviso de despacho nunca se bloquea por cupos: el sofá ya está (o queda) listo y solo se avisa el día que sale
+  const reprogramando = modo !== 'personal' && modo !== 'despacho' && !!fecha && fecha !== actual && !x.listos
   const fab = fecha ? diaAnteriorHabil(fecha) : null
   const primerDia = primerDiaPlan(hoy)
   const lleno = reprogramando && (fab < primerDia || cupoLibre(usados, fab, x.propio) + 1e-9 < Math.min(x.cupos || 1, capacidad(fab) || 1) || capacidad(fab) === 0)
@@ -232,13 +233,13 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
   async function reprogramar() {
     setError(null)
     for (const i of x.items) {
-      const cambia = modo !== 'personal' && String(i.pedido.fecha_entrega || '').slice(0, 10) !== fecha
+      const cambia = modo !== 'personal' && modo !== 'despacho' && String(i.pedido.fecha_entrega || '').slice(0, 10) !== fecha
       if (cambia) {
         const { error: e1 } = await supabase.from('pedidos').update({ fecha_entrega: fecha }).eq('id', i.pedido.id)
         if (e1) { setError('No se pudo cambiar la fecha: ' + e1.message); return }
       }
       await supabase.from('historial_estados').insert({ pedido_id: i.pedido.id, estado_anterior: i.pedido.estado, estado_nuevo: i.pedido.estado,
-        nota: modo === 'personal' ? `Mensaje personalizado enviado por WhatsApp: ${texto.replace(/[*_]/g, '').replace(/\s+/g, ' ').slice(0, 300)}` : cambia ? `Reprogramado: entrega del ${x.prometida || 'sin fecha'} al ${fecha}. Cliente avisado por WhatsApp.` : `Fecha de entrega (${fecha}) confirmada al cliente por WhatsApp.` })
+        nota: modo === 'despacho' ? `Aviso de despacho enviado por WhatsApp: sale el ${fecha}.` : modo === 'personal' ? `Mensaje personalizado enviado por WhatsApp: ${texto.replace(/[*_]/g, '').replace(/\s+/g, ' ').slice(0, 300)}` : cambia ? `Reprogramado: entrega del ${x.prometida || 'sin fecha'} al ${fecha}. Cliente avisado por WhatsApp.` : `Fecha de entrega (${fecha}) confirmada al cliente por WhatsApp.` })
     }
     setHecho(true)
     setTimeout(recargar, 1500)
@@ -272,9 +273,16 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
             ))}
           </div>
           {modo !== 'personal' && <div>
-            <label htmlFor={`f-${x.g}`} className='text-xs text-gray-500 mb-1 block'>Nueva fecha de entrega</label>
+            <label htmlFor={`f-${x.g}`} className='text-xs text-gray-500 mb-1 block'>{modo === 'despacho' ? 'Día en que sale el despacho' : 'Nueva fecha de entrega'}</label>
+            {modo === 'despacho' && (
+              <div className='flex gap-2 mb-2'>
+                {[[hoy, 'Hoy'], [manana, 'Mañana']].map(([d, l]) => (
+                  <button key={l} type='button' onClick={() => setFecha(d)} className={`flex-1 rounded-lg border px-2 py-1.5 text-sm font-medium ${fecha === d ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white'}`}>{l}</button>
+                ))}
+              </div>
+            )}
             <input id={`f-${x.g}`} type='date' value={fecha} onChange={e => setFecha(e.target.value)} />
-            <p className='text-xs text-gray-500 mt-1'>Primera fecha con cupo: <button type='button' className='underline capitalize' onClick={() => setFecha(x.sugerida)}>{fechaLarga(x.sugerida)}</button>. Se fabrica 1 día hábil antes.</p>
+            {modo === 'despacho' ? <p className='text-xs text-gray-500 mt-1'>Solo avisa al cliente el día que sale; no cambia la fecha de entrega ni revisa cupos.</p> : <p className='text-xs text-gray-500 mt-1'>Primera fecha con cupo: <button type='button' className='underline capitalize' onClick={() => setFecha(x.sugerida)}>{fechaLarga(x.sugerida)}</button>. Se fabrica 1 día hábil antes.</p>}
             {lleno && (
               <div className='mt-2 rounded-lg border-2 border-red-400 bg-red-50 p-3' role='alert'>
                 <p className='text-sm font-semibold text-red-800'>⛔ No puedes prometer el {fechaLarga(fecha)}.</p>
@@ -296,7 +304,7 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
           {telWa ? (
             <a className={`btn w-full text-center block ${lleno ? 'opacity-40 pointer-events-none' : ''}`} aria-disabled={lleno} style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }}
               href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto)}`} target='_blank' rel='noreferrer' onClick={reprogramar}>
-              {modo === 'personal' || actual === fecha ? '📲 Enviar por WhatsApp' : '📲 Enviar por WhatsApp y reprogramar'}
+              {modo === 'personal' || modo === 'despacho' || actual === fecha ? '📲 Enviar por WhatsApp' : '📲 Enviar por WhatsApp y reprogramar'}
             </a>
           ) : (
             <div className='space-y-2'>
@@ -305,7 +313,7 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
             </div>
           )}
           <button type='button' className='w-full text-sm text-gray-600 underline pt-1' onClick={async () => { if (await marcarEntregado(x.items.map(i => i.pedido))) { setHecho(true); setTimeout(recargar, 800) } }}>✓ Ya se entregó (sacarlo de la lista)</button>
-          {modo !== 'personal' && <p className='text-xs text-gray-500'>Al tocarlo, la fecha de entrega cambia en el ERP{x.items.length > 1 ? ` para los ${x.items.length} productos` : ''}, queda anotado en el historial y el cliente la ve en su seguimiento.</p>}
+          {modo !== 'personal' && modo !== 'despacho' && <p className='text-xs text-gray-500'>Al tocarlo, la fecha de entrega cambia en el ERP{x.items.length > 1 ? ` para los ${x.items.length} productos` : ''}, queda anotado en el historial y el cliente la ve en su seguimiento.</p>}
         </div>
       )}
     </div>
