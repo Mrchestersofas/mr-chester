@@ -8,7 +8,7 @@ import { SECCIONES, normalizar, siguiente, anterior, estadoPedido, etiqueta, lin
 
 /* Producción (ERP): Joseph / jefe de producción ven todas las secciones y mueven los pedidos.
    Etapas: Programación → Esqueletería → Espumado → Corte y costura → Tapizado → Terminado → Despacho.
-   Al llegar a Despacho el cliente recibe el aviso "¡Tu sofá está listo!" (automático). */
+   Al llegar a Despacho NO se avisa al cliente: el aviso se manda a mano desde Despachos. */
 
 export default function Produccion() {
   const [items, setItems] = useState(null)
@@ -27,7 +27,6 @@ export default function Produccion() {
   async function mover(it, dir) {
     const nueva = dir > 0 ? siguiente(it.etapa) : anterior(it.etapa)
     if (nueva === it.etapa) return
-    if (nueva === 'despacho' && !confirm(`Al pasar ${it.numero} a Despacho, al cliente le llega el correo "¡Tu sofá está listo!". ¿Continuar?`)) return
     await supabase.from('programacion_produccion').update({ etapa_actual: nueva }).eq('id', it.id)
     await supabase.from('pedidos').update({ estado: estadoPedido(nueva) }).eq('id', it.pedido_id)
     await supabase.from('historial_estados').insert({ pedido_id: it.pedido_id, estado_anterior: it.estado, estado_nuevo: estadoPedido(nueva), nota: `${dir > 0 ? 'Pasó' : 'Devuelto'} a ${etiqueta(nueva)}` })
