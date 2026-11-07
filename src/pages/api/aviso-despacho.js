@@ -1,5 +1,5 @@
 // Archivo: src/pages/api/aviso-despacho.js
-// Lo llama la base de datos (Supabase) cuando un pedido pasa a la etapa "despacho".
+// Se llama MANUAL desde Despachos (botón ✉️ Correo). El envío automático al pasar a "despacho" está apagado.
 // Le manda al cliente un correo avisando que su sofá está listo, con copia a Joseph.
 // La función reclamar_aviso_despacho garantiza que cada pedido se avise una sola vez.
 import { Resend } from 'resend'
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
 
   // Copia a Joseph, diciendo si al cliente sí le llegó
   try {
-    const nota = `<p style="font-family:Arial,sans-serif;font-size:13px;background:#fff3cd;padding:10px;margin:0;">Aviso automático de despacho · ${esc(p.nombre)} · ${cliente_ok ? '✅ ' : '⚠️ No se pudo enviar al cliente: '}${esc(detalle)}</p>`
+    const nota = `<p style="font-family:Arial,sans-serif;font-size:13px;background:#fff3cd;padding:10px;margin:0;">Aviso de despacho (enviado desde Despachos) · ${esc(p.nombre)} · ${cliente_ok ? '✅ ' : '⚠️ No se pudo enviar al cliente: '}${esc(detalle)}</p>`
     await resend.emails.send({ from: FROM, to: [COPIA], subject: `[Copia] ${subject}`, html: nota + html })
   } catch (e) { /* la copia no es crítica */ }
 
