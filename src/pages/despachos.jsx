@@ -136,12 +136,62 @@ function Grupo({ x, recargar, alDespachar }) {
             <div className='flex justify-between font-semibold pt-1 border-t border-gray-200'><span>Saldo</span><span className={saldo > 0 ? 'text-red-600' : 'text-green-700'}>{pesos(saldo)}</span></div>
           </div>
 
+          <AvisoListo x={x} c={c} recargar={recargar} />
+
           {elegidos.length > 0 && <Transportador x={x} elegidos={elegidos} saldo={saldo} por={por} setPor={setPor} tel={telT} setTel={setTelT} />}
           {elegidos.length === 0 ? <p className='text-sm text-gray-500'>Elige al menos un producto.</p>
             : saldo > 0 ? <><CobrarSaldo c={c} elegidos={elegidos} saldo={saldo} /><Pago elegidos={elegidos} saldo={saldo} listo={recargar} /></>
             : <Despachar x={x} elegidos={elegidos} total={total} pagado={pagado} alDespachar={alDespachar} por={por} setPor={setPor} tel={telT} />}
         </div>
       )}
+    </div>
+  )
+}
+
+/* ---------- Avisar al cliente que su sofá está listo (manual, ya no es automático) ---------- */
+
+function AvisoListo({ x, c, recargar }) {
+  const listos = x.items.filter(p => etapaDe(p) === 'despacho')
+  const [estado, setEstado] = useState(null)
+  if (!listos.length) return null
+  const sinCorreo = listos.filter(p => !p.aviso_despacho_at)
+  const ultimo = listos.map(p => p.aviso_despacho_at).filter(Boolean).sort().slice(-1)[0]
+  const tel = String(c?.telefono || '').replace(/\D/g, '')
+  const telWa = tel.length === 10 ? '57' + tel : tel
+  const productos = listos.map(p => p.tipo_sofa + (p.cantidad > 1 ? ` ×${p.cantidad}` : '')).join(' + ')
+  const texto = ['♛ *MR. CHESTER* ♛', '', `Hola, ${primerNombre(c?.nombre)} 🤍`, '',
+    `¡Buenas noticias! Tu *${productos}* (pedido ${x.g}) ya está terminado y listo para despacho 🛋️✨`, '',
+    'En breve te contactamos para coordinar el día de la entrega. Recuerda que el saldo debe estar cancelado antes del despacho y verifica que el sofá pueda pasar por puertas, escaleras y ascensor.', '',
+    '¡Gracias por confiar en Mr. Chester!'].join('\n')
+
+  async function correo() {
+    setEstado('enviando')
+    let ok = 0, msg = ''
+    for (const p of sinCorreo) {
+      try {
+        const r = await fetch('/api/aviso-despacho', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pedido_id: p.id }) }).then(r => r.json())
+        if (r.ok) ok++; else msg = r.detalle || r.motivo || 'No se pudo enviar'
+      } catch (e) { msg = e.message }
+    }
+    setEstado(ok ? `✓ Correo enviado${msg ? ' (con un problema: ' + msg + ')' : ''}` : '⚠️ ' + (msg || 'No se pudo enviar'))
+    recargar && recargar()
+  }
+  async function anotarWa() {
+    for (const p of listos) await supabase.from('historial_estados').insert({ pedido_id: p.id, estado_anterior: p.estado, estado_nuevo: p.estado, nota: 'Aviso "tu sofá está listo" enviado por WhatsApp desde Despachos' })
+  }
+
+  return (
+    <div className='rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2'>
+      <p className='text-sm font-medium'>📣 Avisar al cliente que está listo</p>
+      <p className='text-xs text-gray-600'>Ya no se envía solo. Mándalo tú cuando quieras.{ultimo ? ` Correo enviado el ${fechaCorta(ultimo)}.` : ''}</p>
+      <div className='grid grid-cols-2 gap-2'>
+        {telWa ? <a className='btn text-center' href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto)}`} target='_blank' rel='noreferrer' onClick={anotarWa}>📲 WhatsApp</a>
+          : <span className='text-xs text-gray-500 self-center'>Sin teléfono</span>}
+        <button type='button' className='btn' disabled={!sinCorreo.length || !c?.email || estado === 'enviando'} onClick={correo}>
+          {estado === 'enviando' ? 'Enviando…' : !c?.email ? 'Sin correo' : sinCorreo.length ? '✉️ Correo' : '✉️ Ya enviado'}
+        </button>
+      </div>
+      {estado && estado !== 'enviando' && <p className='text-xs'>{estado}</p>}
     </div>
   )
 }
