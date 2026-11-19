@@ -50,7 +50,7 @@ export default function Produccion() {
         </div>
         <div className='flex flex-col gap-2'><Link href='/programacion' className='btn text-sm whitespace-nowrap'>📅 Programación</Link><Link href='/tiempos' className='btn text-sm whitespace-nowrap'>⏱ Tiempos</Link><Link href='/estadisticas' className='btn text-sm whitespace-nowrap'>📊 Estadísticas</Link></div>
       </div>
-      <EnviarDia items={items} />
+      <EnviarDia items={items} recargar={cargar} />
       <div className='grid grid-cols-2 gap-2 mb-4'>
         <a className='btn text-center text-sm' href={linkSemanaJefe(items, lunesDe(hoyISO()))} target='_blank' rel='noreferrer'>📲 Semana actual a Luis</a>
         <a className='btn text-center text-sm' href={linkSemanaJefe(items, sumar(lunesDe(hoyISO()), 7))} target='_blank' rel='noreferrer'>📲 Próxima semana a Luis</a>
