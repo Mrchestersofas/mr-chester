@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { marcarEntregado } from '@/lib/entregar'
+import { calcularProgramacionCompleta } from '@/lib/programacion'
 import { cargarYPlanificar, capacidad, sumarDias, sumarHabiles, hoyColombia, esHabil, FESTIVOS, primerCupoLibre, primerDiaPlan, esBogota } from '@/lib/planificador'
 
 /* Programación de fábrica: 3 cupos por día (sábado 2), por fecha de entrega prometida.
@@ -27,6 +28,9 @@ export default function Programacion() {
   const [tab, setTab] = useState('pedidos')
   const [reprog, setReprog] = useState(null)
   const [ajustando, setAjustando] = useState(false)
+  const [modoSel, setModoSel] = useState(false)
+  const [sel, setSel] = useState([]) // ids en el orden en que se marcaron
+  const [lote, setLote] = useState(null)
 
   async function cargar() {
     try { setDatos(await cargarYPlanificar(supabase)); setError(null) }
@@ -38,7 +42,9 @@ export default function Programacion() {
   if (!datos) return <div className='p-4 text-gray-500'>Calculando programación…</div>
 
   const { plan, usados } = datos
-  const cola = plan.filter(p => p.etapa_actual === 'cola').sort((a, b) => a.dia_inicio.localeCompare(b.dia_inicio) || a.pedido.numero.localeCompare(b.pedido.numero))
+  const cola = plan.filter(p => p.etapa_actual === 'cola').sort((a, b) => a.dia_inicio.localeCompare(b.dia_inicio) || ((a.fijo ? a.orden_en_cola ?? 999 : 999) - (b.fijo ? b.orden_en_cola ?? 999 : 999)) || a.pedido.numero.localeCompare(b.pedido.numero))
+  const toggleSel = id => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  const elegidos = sel.map(id => cola.find(p => p.id === id)).filter(Boolean)
   const fabrica = plan.filter(p => p.etapa_actual !== 'cola')
   const tarde = plan.filter(p => p.estado === 'tarde').length
   const hoyP = hoyColombia()
@@ -104,8 +110,14 @@ export default function Programacion() {
 
       {tab === 'pedidos' ? (
         <div className='space-y-3'>
+          {cola.length > 0 && (
+            <button className={`btn w-full ${modoSel ? 'bg-gray-900 text-white' : ''}`} onClick={() => { setModoSel(!modoSel); setSel([]) }}>
+              {modoSel ? '✕ Cancelar selección' : '✅ Programar varios a mano'}
+            </button>
+          )}
+          {modoSel && <p className='text-xs text-gray-500'>Marca los pedidos en el orden en que quieres que se hagan. Después eliges el día.</p>}
           {cola.length === 0 && <div className='card text-center text-gray-500 py-8'>No hay pedidos en cola.</div>}
-          {cola.map(p => <Tarjeta key={p.id} p={p} onReprog={() => setReprog(p)} recargar={cargar} />)}
+          {cola.map(p => <Tarjeta key={p.id} p={p} onReprog={() => setReprog(p)} recargar={cargar} modoSel={modoSel} n={sel.indexOf(p.id) + 1} onSel={() => toggleSel(p.id)} />)}
           {fabrica.length > 0 && (
             <>
               <h2 className='text-sm font-semibold uppercase tracking-wide text-gray-500 pt-3'>Ya en fábrica</h2>
@@ -120,6 +132,15 @@ export default function Programacion() {
         : tab === 'calendario' ? <Calendario plan={plan} usados={usados} onReprog={setReprog} />
         : <Recaudo plan={plan} />}
 
+      {modoSel && elegidos.length > 0 && (
+        <div className='fixed bottom-0 inset-x-0 z-30 p-3 bg-white border-t border-gray-200 shadow-lg'>
+          <div className='max-w-2xl mx-auto flex items-center gap-3'>
+            <div className='text-sm flex-1'><b>{elegidos.length} pedido{elegidos.length === 1 ? '' : 's'}</b> · {cup(elegidos.reduce((a, p) => a + p.cupos, 0))} cupos</div>
+            <button className='btn bg-gray-900 text-white' onClick={() => setLote(elegidos)}>📅 Elegir día</button>
+          </div>
+        </div>
+      )}
+      {lote && <ProgramarVarios lista={lote} usados={usados} cerrar={() => setLote(null)} listo={async () => { setLote(null); setSel([]); setModoSel(false); setDatos(null); await cargar() }} />}
       {reprog && <Reprogramar p={reprog} usados={usados} cerrar={() => setReprog(null)} listo={async () => { setReprog(null); setDatos(null); await cargar() }} />}
     </div>
   )
@@ -129,7 +150,7 @@ function Resumen({ n, t, color = '' }) {
   return <div className='card text-center py-3'><div className={`text-2xl font-semibold ${color}`}>{n}</div><div className='text-xs text-gray-500'>{t}</div></div>
 }
 
-function Tarjeta({ p, onReprog, recargar }) {
+function Tarjeta({ p, onReprog, recargar, modoSel, n, onSel }) {
   const [lbl, cls] = SEM[p.estado] || SEM.sin_fecha
   const [cambiando, setCambiando] = useState(false)
   const enCola = p.etapa_actual === 'cola'
@@ -144,9 +165,12 @@ function Tarjeta({ p, onReprog, recargar }) {
   }
 
   return (
-    <div className={`card space-y-2 ${p.estado === 'tarde' ? 'border-red-300' : ''}`}>
+    <div className={`card space-y-2 ${p.estado === 'tarde' ? 'border-red-300' : ''} ${modoSel && n > 0 ? 'ring-2 ring-gray-900' : ''}`} onClick={modoSel && enCola ? onSel : undefined} style={modoSel && enCola ? { cursor: 'pointer' } : undefined}>
       <div className='flex items-start justify-between gap-2'>
-        <div className='min-w-0'>
+        {modoSel && enCola && (
+          <span className={`shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-bold ${n > 0 ? 'bg-gray-900 border-gray-900 text-white' : 'border-gray-300'}`} aria-hidden='true'>{n > 0 ? n : ''}</span>
+        )}
+        <div className='min-w-0 flex-1'>
           <div className='font-semibold'>{p.pedido.numero} · {p.pedido.cliente?.nombre || 'Sin cliente'}</div>
           <div className='text-sm text-gray-600'>{p.pedido.tipo_sofa}{p.pedido.cantidad > 1 ? ` × ${p.pedido.cantidad}` : ''} · {cup(p.cupos)} cupo{p.cupos === 1 ? '' : 's'} · {p.pedido.cliente?.ciudad || 'Bogotá'}</div>
         </div>
@@ -160,8 +184,8 @@ function Tarjeta({ p, onReprog, recargar }) {
         <Dato t='Prometida al cliente' v={f(p.prometida)} fuerte />
         {p.sobrecupo && enCola && <div className='col-span-2 text-xs text-amber-700'>⚠ Ese día quedó con más cupos de los que hay.</div>}
       </div>
-      <button type='button' className='text-xs text-gray-500 underline' onClick={async () => { if (await marcarEntregado([p.pedido])) recargar() }}>✓ Ya se entregó</button>
-      {enCola && (
+      {!modoSel && <button type='button' className='text-xs text-gray-500 underline' onClick={async () => { if (await marcarEntregado([p.pedido])) recargar() }}>✓ Ya se entregó</button>}
+      {enCola && !modoSel && (
         <div className='flex gap-2 pt-1'>
           <button className='btn flex-1' onClick={onReprog}>📅 Reprogramar</button>
           {p.estado === 'tarde' && <button className='btn flex-1 text-red-700' onClick={cambiarPrometida} disabled={cambiando}>{cambiando ? 'Cambiando…' : `Mover entrega al ${f(p.entrega_max)}`}</button>}
@@ -380,6 +404,76 @@ function Mes({ plan, usados, onReprog, onMover }) {
 }
 
 function diaVisible(d) { return new Date(d + 'T12:00:00Z').getUTCDay() !== 0 }
+
+/* ---------------- Programar varios pedidos a mano en un día ---------------- */
+function ProgramarVarios({ lista, usados, cerrar, listo }) {
+  const [orden, setOrden] = useState(lista)
+  const [dia, setDia] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+  const hoy = hoyColombia()
+  const total = orden.reduce((a, p) => a + p.cupos, 0)
+  // Cupos libres de cada día sin contar estos mismos pedidos
+  const propios = d => orden.reduce((a, p) => a + (d >= p.dia_inicio && d <= p.dia_fin ? (p.dia_inicio === p.dia_fin ? p.cupos : p.peso) : 0), 0)
+  const opciones = []
+  for (let k = 0, d = primerDiaPlan(hoy); opciones.length < 30 && k < 90; k++, d = sumarHabiles(d, 1)) opciones.push({ d, libre: capacidad(d) - (usados[d] || 0) + propios(d) })
+  const mover = (i, delta) => setOrden(o => { const x = [...o]; const j = i + delta; if (j < 0 || j >= x.length) return x; [x[i], x[j]] = [x[j], x[i]]; return x })
+
+  async function enviar() {
+    const op = opciones.find(o => o.d === dia)
+    if (op && op.libre + 1e-9 < total && !confirm(`Ese día solo tiene ${cup(Math.max(0, op.libre))} cupos libres y estás mandando ${cup(total)}. ¿Programarlos igual?`)) return
+    setGuardando(true)
+    for (let i = 0; i < orden.length; i++) {
+      // 8:00 a. m. Colombia + i minutos, para que en las listas de cada sección salgan en este orden
+      const horas = calcularProgramacionCompleta(new Date(Date.parse(dia + 'T13:00:00Z') + i * 60000))
+      await supabase.from('programacion_produccion').update({ fijo: true, dia_produccion: dia, orden_en_cola: i + 1, ...horas }).eq('id', orden[i].id)
+    }
+    await listo()
+  }
+
+  return (
+    <div className='fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center' onClick={cerrar}>
+      <div className='bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col' onClick={e => e.stopPropagation()} role='dialog' aria-label='Programar varios pedidos'>
+        <div className='p-4 border-b border-gray-100 flex justify-between items-start gap-2'>
+          <div>
+            <div className='font-semibold'>Programar {orden.length} pedido{orden.length === 1 ? '' : 's'} a mano</div>
+            <div className='text-sm text-gray-600'>{cup(total)} cupos · quedan fijos 📌 y el automático no los mueve</div>
+          </div>
+          <button className='text-gray-500 text-2xl leading-none px-2' onClick={cerrar} aria-label='Cerrar'>×</button>
+        </div>
+        <div className='overflow-y-auto p-3 space-y-4'>
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2'>1. Orden en que se hacen</div>
+            <div className='space-y-1'>
+              {orden.map((p, i) => (
+                <div key={p.id} className='flex items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5'>
+                  <span className='w-6 h-6 rounded-full bg-gray-900 text-white text-xs font-bold flex items-center justify-center shrink-0'>{i + 1}</span>
+                  <div className='flex-1 min-w-0 text-sm'><b>{p.pedido.numero}</b> · {p.pedido.tipo_sofa}<div className='text-xs text-gray-500 truncate'>{p.pedido.cliente?.nombre || 'Sin cliente'} · {p.pedido.material || ''}</div></div>
+                  <button className='px-2 text-lg text-gray-500 disabled:opacity-30' disabled={i === 0} onClick={() => mover(i, -1)} aria-label='Subir'>↑</button>
+                  <button className='px-2 text-lg text-gray-500 disabled:opacity-30' disabled={i === orden.length - 1} onClick={() => mover(i, 1)} aria-label='Bajar'>↓</button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className='text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2'>2. Día de producción</div>
+            {opciones.map(({ d, libre }) => {
+              const alcanza = libre + 1e-9 >= total
+              return (
+                <button key={d} onClick={() => setDia(d)} className={`w-full text-left flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg ${dia === d ? 'bg-gray-900 text-white' : 'hover:bg-gray-50'}`}>
+                  <span className='font-medium capitalize'>{f(d)}</span>
+                  <span className={`text-xs font-semibold ${dia === d ? '' : alcanza ? 'text-green-700' : 'text-amber-600'}`}>{libre > 0 ? `${cup(libre)} libre${libre === 1 ? '' : 's'}` : 'Lleno'}{alcanza ? '' : ' ⚠'}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className='p-3 border-t border-gray-100'>
+          <button className='btn w-full bg-gray-900 text-white disabled:opacity-40' disabled={!dia || guardando} onClick={enviar}>{guardando ? 'Enviando…' : dia ? `📌 Enviar a producción el ${f(dia)}` : 'Elige un día'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Reprogramar({ p, usados, cerrar, listo }) {
   const [guardando, setGuardando] = useState(false)
