@@ -13,6 +13,8 @@ function fechaCorta(iso) { if (!iso) return '—'; const [, m, d] = String(iso).
 function primerNombre(n) { const x = String(n || '').trim().split(/\s+/)[0] || ''; return x.charAt(0).toUpperCase() + x.slice(1).toLowerCase() }
 const ETAPA = { cola: 'En cola', estructura: 'Estructura', espumado: 'Espumado', corte_tela: 'Corte de tela', tapizado: 'Tapizado', terminado: 'Terminado', control_calidad: 'Control de calidad', despacho: 'Listo', completado: 'Entregado' }
 const etapaDe = p => (Array.isArray(p.programacion_produccion) ? p.programacion_produccion[0] : p.programacion_produccion)?.etapa_actual || 'cola'
+// Va en todos los mensajes al cliente cuando el pedido está listo o se va a despachar
+const ENVIO = '🚚 *Importante:* el valor del envío no está incluido y se paga directamente al transportador.'
 const MEDIOS = [['efectivo', 'Efectivo'], ['transferencia', 'Transferencia bancaria'], ['tarjeta_credito', 'Tarjeta crédito'], ['tarjeta_debito', 'Tarjeta débito'], ['nequi', 'Nequi'], ['daviplata', 'Daviplata']]
 
 export default function Despachos() {
@@ -178,6 +180,7 @@ function AvisoListo({ x, c, recargar }) {
   const texto = ['♛ *MR. CHESTER* ♛', '', `Hola, ${primerNombre(c?.nombre)} 🤍`, '',
     `¡Buenas noticias! Tu *${productos}* (pedido ${x.g}) ya está terminado y listo para despacho 🛋️✨`, '',
     'En breve te contactamos para coordinar el día de la entrega. Recuerda que el saldo debe estar cancelado antes del despacho y verifica que el sofá pueda pasar por puertas, escaleras y ascensor.', '',
+    ENVIO, '',
     '¡Gracias por confiar en Mr. Chester!'].join('\n')
 
   async function correo() {
@@ -235,6 +238,8 @@ function mensajeCobro(c, elegidos, saldo, medios) {
     medios,
     '',
     'Cuando realices el pago, envíanos el comprobante por este chat y coordinamos la fecha y hora de entrega 🚚',
+    '',
+    ENVIO,
     '',
     '¡Gracias por elegir Mr. Chester! 🙌',
   ].join('\n')
@@ -487,7 +492,8 @@ function Transportador({ x, elegidos, saldo, por, setPor, tel, setTel }) {
       `*Productos:*`,
       ...elegidos.map(p => `• ${p.tipo_sofa}${p.cantidad > 1 ? ` × ${p.cantidad}` : ''} · ${p.material}`),
       ``,
-      saldo > 0 ? `💰 *Saldo pendiente: $${Math.round(saldo).toLocaleString('es-CO')}* — confirmar pago antes de entregar` : `✅ Pagado — no cobrar`,
+      saldo > 0 ? `💰 *Saldo pendiente: $${Math.round(saldo).toLocaleString('es-CO')}* — confirmar pago antes de entregar` : `✅ Sofá pagado`,
+      `🚚 El valor del envío te lo paga el cliente directamente a ti.`,
       obs.trim() ? `📝 ${obs.trim()}` : null,
       ``,
       `Recoger en fábrica: Cra 99 #155-21, Bogotá`,
@@ -605,7 +611,8 @@ function textoTransportador(rem, cliente) {
     ``,
     ...(rem.items || []).map(i => `🛋️ ${i.tipo_sofa}${i.cantidad > 1 ? ` × ${i.cantidad}` : ''} · ${i.material}`),
     ``,
-    saldo > 0 ? `💰 Saldo pendiente: ${pesos(saldo)} — confirmar pago antes de entregar` : `✅ Pagado — no cobrar`,
+    saldo > 0 ? `💰 Saldo pendiente: ${pesos(saldo)} — confirmar pago antes de entregar` : `✅ Sofá pagado`,
+    `🚚 El valor del envío te lo paga el cliente directamente a ti.`,
     rem.observaciones ? `📝 ${rem.observaciones}` : null,
     ``,
     `Recoger en fábrica: Cra 99 #155-21, Bogotá`,
