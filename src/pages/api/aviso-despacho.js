@@ -62,6 +62,7 @@ function correo(p) {
       <tr><td style="padding:18px 22px;">
         <p style="margin:0 0 8px;color:#1a1a1a;font-size:11px;letter-spacing:2px;font-family:Arial,sans-serif;font-weight:700;">ANTES DE LA ENTREGA</p>
         <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Recuerda que el saldo debe estar cancelado antes del despacho.</p>
+        <p style="margin:0 0 6px;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• <strong>El valor del envío no está incluido y se paga directamente al transportador.</strong></p>
         <p style="margin:0;color:#555;font-size:13px;font-family:Arial,sans-serif;line-height:1.7;">• Verifica que el sofá pueda ingresar por puertas, escaleras y ascensor.</p>
       </td></tr>
     </table>
