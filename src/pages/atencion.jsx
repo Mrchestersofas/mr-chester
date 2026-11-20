@@ -46,6 +46,8 @@ function mensaje(x, fecha, avisos) {
 }
 
 const pesos = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-CO')
+// Va en todos los mensajes al cliente cuando el pedido está listo o se va a despachar
+const ENVIO = '🚚 *Importante:* el valor del envío no está incluido y se paga directamente al transportador.'
 
 function mensajeConfirmar(x, fecha) {
   const nombre = primerNombre(x.cliente?.nombre)
@@ -63,6 +65,8 @@ function mensajeConfirmar(x, fecha) {
     '',
     'Unos días antes te contactamos por aquí para coordinar la hora de entrega 🚚',
     ...(saldo > 0 ? ['', `Te recordamos que el saldo de *${pesos(saldo)}* se paga antes del despacho.`] : []),
+    '',
+    ENVIO,
     '',
     `Puedes seguir el avance de tu sofá aquí: ${URL_SEGUIMIENTO} (con tu número de cédula).`,
     '',
@@ -89,6 +93,8 @@ function mensajeDespacho(x, fecha, hoy, medios) {
     '• Que haya alguien en la dirección para recibirlo.',
     '• Revisar que el sofá pase por la puerta, el ascensor o las escaleras.',
     '• Si tu edificio pide autorización para el ingreso de muebles, déjala lista.',
+    '',
+    ENVIO,
     ...(saldo > 0 ? ['', `💰 Recuerda que el saldo a pagar es de *${pesos(saldo)}* y debe estar cancelado antes del despacho.`, ...(medios ? ['', 'Puedes pagar por:', medios] : []), '', 'Envíanos el comprobante por este chat 🙏'] : ['', '✅ Tu pedido ya está pagado completo.']),
     '',
     'Cualquier inquietud, escríbenos por aquí. ¡Ya casi lo tienes en casa! 🙌',
@@ -153,7 +159,7 @@ export default function Atencion() {
       </div>
 
       {buscar.trim() ? (() => {
-        const sinTilde = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        const sinTilde = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
         const q = sinTilde(buscar.trim())
         const vis = todos.filter(x => [x.g, x.cliente?.nombre, x.cliente?.telefono, ...x.items.map(i => i.pedido.tipo_sofa)].some(t => sinTilde(t).includes(q)))
         return (
