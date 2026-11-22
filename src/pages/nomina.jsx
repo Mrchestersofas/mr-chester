@@ -124,7 +124,7 @@ function Quincena({ emps, pagos, periodo, setPeriodo, lista, pagoFin, recargar, 
             <div className='min-w-0'>
               <p className='font-semibold truncate'>{e.nombre}</p>
               <p className='text-xs text-gray-500'>{e.cargo || '—'} · quincena {pesos(Number(e.salario) / 2)}</p>
-              {pg && <p className='text-xs text-green-700 mt-0.5'>✓ Pagado {pesos(pg.total)} el {fCorta(pg.fecha_pago)}{Number(pg.extras) || Number(pg.descuentos) ? ` (base ${pesos(pg.base)}${Number(pg.extras) ? ` + ${pesos(pg.extras)}` : ''}${Number(pg.descuentos) ? ` − ${pesos(pg.descuentos)}` : ''})` : ''}</p>}
+              {pg && <p className='text-xs text-green-700 mt-0.5'>{pg.soporte ? '📎 ' : ''}✓ Pagado {pesos(pg.total)} el {fCorta(pg.fecha_pago)}{Number(pg.extras) || Number(pg.descuentos) ? ` (base ${pesos(pg.base)}${Number(pg.extras) ? ` + ${pesos(pg.extras)}` : ''}${Number(pg.descuentos) ? ` − ${pesos(pg.descuentos)}` : ''})` : ''}</p>}
             </div>
             {pg ? <button className='btn text-sm flex-none' onClick={() => setComprobante({ e, pg })}>🧾 Comprobante</button>
               : <button className='btn btn-primary text-sm flex-none' onClick={() => setPagando(e)}>Pagar</button>}
@@ -133,7 +133,7 @@ function Quincena({ emps, pagos, periodo, setPeriodo, lista, pagoFin, recargar, 
       })}
 
       {pagando && <ModalPago e={pagando} periodo={periodo} hoy={hoy} cerrar={() => setPagando(null)} listo={async pg => { await sincronizarFinanzas(periodo, pagoFin); setPagando(null); await recargar(); setComprobante({ e: pagando, pg }) }} />}
-      {comprobante && <ModalComprobante {...comprobante} cerrar={() => setComprobante(null)} />}
+      {comprobante && <ModalComprobante {...comprobante} cerrar={() => setComprobante(null)} recargar={recargar} />}
     </div>
   )
 }
@@ -145,6 +145,71 @@ async function registrar({ e, periodo, fecha, extras, descuentos, medio, nota })
   const { data, error } = await supabase.from('nom_pagos').insert({ empleado_id: e.id, periodo, fecha_pago: fecha, base, extras: Number(extras || 0), descuentos: Number(descuentos || 0), total, medio, nota: nota || null, registrado_por: s.session?.user?.email || null }).select().single()
   if (error) throw error
   return data
+}
+
+/* ---------- Soporte del banco (foto del comprobante de pago) ---------- */
+// Reduce la foto (máx. 1600 px) para que suba rápido y ocupe poco
+async function reducir(file) {
+  if (!file.type.startsWith('image/')) return file
+  try {
+    const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = URL.createObjectURL(file) })
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height))
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k)
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82))
+    return b ? new File([b], 'soporte.jpg', { type: 'image/jpeg' }) : file
+  } catch (er) { return file }
+}
+
+async function subirSoporte(pg, file) {
+  const f = await reducir(file)
+  const ext = f.type === 'application/pdf' ? 'pdf' : 'jpg'
+  const ruta = `nomina/${pg.periodo}/${pg.id}-${Date.now()}.${ext}`
+  const { error } = await supabase.storage.from('soportes').upload(ruta, f, { contentType: f.type, upsert: false })
+  if (error) throw error
+  const { error: e2 } = await supabase.from('nom_pagos').update({ soporte: ruta }).eq('id', pg.id)
+  if (e2) throw e2
+  if (pg.soporte) await supabase.storage.from('soportes').remove([pg.soporte])
+  return ruta
+}
+
+async function verSoporte(ruta) {
+  const { data, error } = await supabase.storage.from('soportes').createSignedUrl(ruta, 600)
+  if (error) { alert('No se pudo abrir el soporte: ' + error.message); return }
+  window.open(data.signedUrl, '_blank')
+}
+
+function SoporteBanco({ pg, alCambiar }) {
+  const [ruta, setRuta] = useState(pg.soporte || null)
+  const [img, setImg] = useState(null)
+  const [subiendo, setSubiendo] = useState(false)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    setImg(null)
+    if (ruta && !ruta.endsWith('.pdf')) supabase.storage.from('soportes').createSignedUrl(ruta, 600).then(({ data }) => setImg(data?.signedUrl || null))
+  }, [ruta])
+  async function elegir(ev) {
+    const file = ev.target.files && ev.target.files[0]; ev.target.value = ''
+    if (!file) return
+    setSubiendo(true); setError(null)
+    try { const r = await subirSoporte({ ...pg, soporte: ruta }, file); setRuta(r); alCambiar && alCambiar(r) }
+    catch (er) { setError('No se pudo subir: ' + er.message) }
+    setSubiendo(false)
+  }
+  return (
+    <div className='rounded-lg border border-gray-200 p-3 space-y-2'>
+      <p className='text-sm font-semibold'>📎 Soporte del banco</p>
+      {ruta
+        ? <>
+            {img ? <img src={img} alt='Soporte del pago' className='w-full max-h-72 object-contain rounded border border-gray-100 cursor-pointer' onClick={() => verSoporte(ruta)} />
+              : <button className='btn w-full justify-center' onClick={() => verSoporte(ruta)}>📄 Ver soporte (PDF)</button>}
+            <label className='btn w-full justify-center text-sm cursor-pointer'>{subiendo ? 'Subiendo…' : '🔄 Cambiar foto'}<input type='file' accept='image/*,application/pdf' className='hidden' onChange={elegir} disabled={subiendo} /></label>
+          </>
+        : <label className='btn btn-primary w-full justify-center cursor-pointer'>{subiendo ? 'Subiendo…' : '📷 Adjuntar foto del comprobante'}<input type='file' accept='image/*,application/pdf' className='hidden' onChange={elegir} disabled={subiendo} /></label>}
+      {error && <p className='text-sm text-red-600'>{error}</p>}
+      <p className='text-xs text-gray-500'>Queda guardado en el pago. Solo lo ven los usuarios del ERP.</p>
+    </div>
+  )
 }
 
 // Un solo movimiento en Finanzas por quincena, con el total pagado hasta el momento
@@ -169,12 +234,17 @@ function ModalPago({ e, periodo, hoy, cerrar, listo }) {
   const [descuentos, setDescuentos] = useState('')
   const [medio, setMedio] = useState(e.medio_pago || 'transferencia')
   const [nota, setNota] = useState('')
+  const [foto, setFoto] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
   const total = base + (Number(extras) || 0) - (Number(descuentos) || 0)
   async function guardar() {
     setGuardando(true); setError(null)
-    try { const pg = await registrar({ e, periodo, fecha, extras, descuentos, medio, nota }); await listo(pg) }
+    try {
+      const pg = await registrar({ e, periodo, fecha, extras, descuentos, medio, nota })
+      if (foto) { try { pg.soporte = await subirSoporte(pg, foto) } catch (er) { alert('El pago quedó registrado, pero la foto no se pudo subir. Adjúntala desde el comprobante.') } }
+      await listo(pg)
+    }
     catch (er) { setError('No se pudo registrar: ' + er.message); setGuardando(false) }
   }
   return (
@@ -189,6 +259,7 @@ function ModalPago({ e, periodo, hoy, cerrar, listo }) {
           <div><label htmlFor='p-med' className='text-xs text-gray-500 mb-1 block'>Medio</label><select id='p-med' value={medio} onChange={ev => setMedio(ev.target.value)}>{MEDIOS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         </div>
         <div><label htmlFor='p-not' className='text-xs text-gray-500 mb-1 block'>Nota (opcional, sale en el comprobante)</label><input id='p-not' value={nota} onChange={ev => setNota(ev.target.value)} placeholder='Ej: incluye 4 horas extra' /></div>
+        <label className='btn w-full justify-center text-sm cursor-pointer'>{foto ? `📎 ${foto.name} · cambiar` : '📷 Adjuntar foto del comprobante (opcional)'}<input type='file' accept='image/*,application/pdf' className='hidden' onChange={ev => setFoto(ev.target.files && ev.target.files[0] || null)} /></label>
         <div className='rounded-lg bg-gray-50 p-3 flex justify-between font-semibold'><span>Total a pagar</span><span>{pesos(total)}</span></div>
         {error && <p className='text-sm text-red-600'>{error}</p>}
         <button className='btn btn-primary w-full justify-center' disabled={guardando || total <= 0} onClick={guardar}>{guardando ? 'Registrando…' : 'Registrar pago'}</button>
@@ -257,7 +328,7 @@ async function dibujar(e, pg) {
   return new Promise(ok => c.toBlob(ok, 'image/png'))
 }
 
-function ModalComprobante({ e, pg, cerrar }) {
+function ModalComprobante({ e, pg, cerrar, recargar }) {
   const [url, setUrl] = useState(null)
   const [blob, setBlob] = useState(null)
   useEffect(() => { dibujar(e, pg).then(b => { setBlob(b); setUrl(URL.createObjectURL(b)) }) }, [])
@@ -277,6 +348,7 @@ function ModalComprobante({ e, pg, cerrar }) {
         {puedeCompartir && <button className='btn w-full justify-center' style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }} onClick={compartir}>📲 Enviar comprobante (elige WhatsApp y a {primerNombre(e.nombre)})</button>}
         {telWa && <a className='btn w-full text-center block' href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto)}`} target='_blank' rel='noreferrer'>💬 Abrir el chat de {primerNombre(e.nombre)} con el mensaje</a>}
         {url && <a className='btn w-full text-center block' href={url} download={`Nomina-${primerNombre(e.nombre)}-${pg.periodo}.png`}>⬇ Descargar imagen</a>}
+        <SoporteBanco pg={pg} alCambiar={() => recargar && recargar()} />
         <p className='text-xs text-gray-500'>En el celular, "Enviar comprobante" abre el menú de compartir: elige WhatsApp y el contacto. En el computador, descarga la imagen y adjúntala en el chat.</p>
       </div>
     </div>
@@ -345,7 +417,7 @@ function Historial({ emps, pagos }) {
       {per.map(p => (
         <div key={p} className='card'>
           <div className='flex justify-between font-semibold mb-2'><span>Pago del {fLarga(p)}</span><span>{pesos(porPeriodo[p].reduce((a, x) => a + Number(x.total || 0), 0))}</span></div>
-          {porPeriodo[p].map(x => <div key={x.id} className='flex justify-between text-sm py-0.5'><span>{nombre(x.empleado_id)}</span><span>{pesos(x.total)} · {fCorta(x.fecha_pago)}</span></div>)}
+          {porPeriodo[p].map(x => <div key={x.id} className='flex justify-between text-sm py-0.5'><span>{nombre(x.empleado_id)}</span><span>{x.soporte && <button className='mr-2' title='Ver soporte del banco' onClick={() => verSoporte(x.soporte)}>📎</button>}{pesos(x.total)} · {fCorta(x.fecha_pago)}</span></div>)}
         </div>
       ))}
     </div>
