@@ -38,6 +38,7 @@ const PAGINAS_VENDEDOR = ['/capacitacion', '/cotizaciones']
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<any>(undefined)
+  const [recuperando, setRecuperando] = useState(false)
   const [vendedor, setVendedor] = useState<boolean | undefined>(undefined)
   const router = useRouter()
   const email = session?.user?.email
@@ -51,11 +52,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [vendedor, router.pathname])
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data } = supabase.auth.onAuthStateChange((ev, s) => { setSession(s); if (ev === 'PASSWORD_RECOVERY') setRecuperando(true) })
     return () => data.subscription.unsubscribe()
   }, [])
   if (session === undefined) return <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Cargando…</div>
   if (!session) return <LoginERP />
+  if (recuperando) return <NuevaClave listo={() => setRecuperando(false)} />
   if (!PERMITIDOS.includes(email)) {
     if (vendedor === undefined) return <div className="flex items-center justify-center h-screen text-gray-400 text-sm">Cargando…</div>
     if (!vendedor) return <SinAcceso />
@@ -70,6 +72,18 @@ function LoginERP() {
   const [k, setK] = useState('')
   const [error, setError] = useState('')
   const [entrando, setEntrando] = useState(false)
+  const [olvido, setOlvido] = useState(false)
+  const [aviso, setAviso] = useState('')
+  async function recuperar() {
+    const t = u.trim().toLowerCase()
+    if (!t) { setError('Escribe tu usuario o correo y vuelve a tocar "¿Olvidaste tu clave?".'); return }
+    const email = t.includes('@') ? t : (USUARIOS[t] || `${t}@envios.mrchester.com.co`)
+    setEntrando(true); setError(''); setAviso('')
+    const { error: er } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/' })
+    setEntrando(false)
+    if (er) setError('No se pudo enviar el correo: ' + er.message)
+    else setAviso(`Te enviamos un correo a ${email} con un enlace para crear una clave nueva. Revisa también la carpeta de spam.`)
+  }
   async function entrar(e: React.FormEvent) {
     e.preventDefault()
     const t = u.trim().toLowerCase()
@@ -90,7 +104,45 @@ function LoginERP() {
         <div><label htmlFor="lu" className="text-xs text-gray-500 mb-1 block">Usuario</label><input id="lu" autoCapitalize="none" autoComplete="username" value={u} onChange={e => setU(e.target.value)} /></div>
         <div><label htmlFor="lk" className="text-xs text-gray-500 mb-1 block">Clave</label><input id="lk" type="password" autoComplete="current-password" value={k} onChange={e => setK(e.target.value)} /></div>
         {error && <p className="text-sm text-red-700">{error}</p>}
-        <button className="w-full rounded-xl py-3 font-bold" style={{ background: '#1a1a1a', color: '#C9A84C' }} disabled={entrando}>{entrando ? 'Entrando…' : 'Entrar'}</button>
+        {aviso && <p className="text-sm text-green-700">{aviso}</p>}
+        <button className="w-full rounded-xl py-3 font-bold" style={{ background: '#1a1a1a', color: '#C9A84C' }} disabled={entrando}>{entrando ? 'Un momento…' : 'Entrar'}</button>
+        {!olvido
+          ? <button type="button" className="w-full text-sm text-gray-500 underline" onClick={() => { setOlvido(true); setError(''); setAviso('') }}>¿Olvidaste tu clave?</button>
+          : <div className="rounded-lg bg-gray-50 p-3 space-y-2">
+              <p className="text-xs text-gray-600">Escribe arriba tu usuario o correo y toca el botón. Te llega un correo para crear una clave nueva.</p>
+              <button type="button" className="btn w-full justify-center text-sm" disabled={entrando} onClick={recuperar}>📧 Enviarme el correo</button>
+            </div>}
+      </form>
+    </div>
+  )
+}
+
+function NuevaClave({ listo }: { listo: () => void }) {
+  const [k, setK] = useState('')
+  const [k2, setK2] = useState('')
+  const [msg, setMsg] = useState('')
+  const [ok, setOk] = useState(false)
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault()
+    if (k.length < 6) { setMsg('La clave debe tener mínimo 6 caracteres.'); return }
+    if (k !== k2) { setMsg('Las dos claves no coinciden.'); return }
+    const { error } = await supabase.auth.updateUser({ password: k })
+    if (error) { setMsg('No se pudo cambiar: ' + error.message); return }
+    setOk(true); setMsg('✓ Listo, tu clave quedó cambiada.')
+    setTimeout(listo, 1500)
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#F6F3EE' }}>
+      <form onSubmit={guardar} className="w-full max-w-sm bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <div className="text-center">
+          <div style={{ color: '#C9A84C', fontSize: 28 }}>♛</div>
+          <div style={{ color: '#1a1a1a', fontFamily: 'Georgia, serif', fontWeight: 700, letterSpacing: 4, fontSize: 20 }}>MR. CHESTER</div>
+          <div className="text-sm text-gray-600 mt-2">Crea tu clave nueva</div>
+        </div>
+        <div><label htmlFor="nk1" className="text-xs text-gray-500 mb-1 block">Clave nueva</label><input id="nk1" type="password" autoComplete="new-password" value={k} onChange={e => setK(e.target.value)} /></div>
+        <div><label htmlFor="nk2" className="text-xs text-gray-500 mb-1 block">Repite la clave</label><input id="nk2" type="password" autoComplete="new-password" value={k2} onChange={e => setK2(e.target.value)} /></div>
+        {msg && <p className={`text-sm ${ok ? 'text-green-700' : 'text-red-700'}`}>{msg}</p>}
+        <button className="w-full rounded-xl py-3 font-bold" style={{ background: '#1a1a1a', color: '#C9A84C' }} disabled={ok}>Guardar clave</button>
       </form>
     </div>
   )
