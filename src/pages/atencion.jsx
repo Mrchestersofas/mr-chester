@@ -399,4 +399,50 @@ function Resenas() {
     setLista(out)
   }
   useEffect(() => { cargar() }, [])
-  if (error) return <p className='rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700'>No se pudo cargar: {error}
+  if (error) return <p className='rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700'>No se pudo cargar: {error}</p>
+  if (!lista) return <p className='text-gray-500'>Cargando entregados…</p>
+  const pend = lista.filter(x => !x.pedida), hechas = lista.filter(x => x.pedida)
+  const vis = ver === 'pendientes' ? pend : hechas
+  return (
+    <>
+      <p className='text-xs text-gray-500 mb-2'>Clientes con pedido entregado. Es opcional: pídele la reseña solo a quien quedó contento. Al tocar el botón se abre WhatsApp con el mensaje y queda anotado.</p>
+      <div className='flex gap-2 mb-3'>
+        {[['pendientes', `Sin pedir (${pend.length})`], ['hechas', `Ya pedidas (${hechas.length})`]].map(([k, l]) => (
+          <button key={k} onClick={() => setVer(k)} className={`px-3 py-1.5 text-xs font-medium rounded-full ${ver === k ? 'bg-amber-500 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{l}</button>
+        ))}
+      </div>
+      <div className='space-y-3'>{vis.map(x => <FilaResena key={x.g} x={x} recargar={cargar} />)}</div>
+      {!vis.length && <div className='card text-center text-gray-500 py-6'>{ver === 'pendientes' ? 'No hay clientes pendientes.' : 'Todavía no se ha pedido ninguna reseña.'}</div>}
+    </>
+  )
+}
+
+function FilaResena({ x, recargar }) {
+  const modelos = x.items.map(i => i.tipo_sofa).filter(Boolean).join(' y ') || 'sofá'
+  const [texto, setTexto] = useState(() => mensajeResena(x.cliente?.nombre, modelos))
+  const [abierto, setAbierto] = useState(false)
+  const tel = String(x.cliente?.telefono || '').replace(/\D/g, '')
+  const telWa = tel.length === 10 ? '57' + tel : tel
+  async function anotar() {
+    for (const i of x.items) await supabase.from('historial_estados').insert({ pedido_id: i.id, estado_anterior: i.estado, estado_nuevo: i.estado, nota: 'Reseña pedida por WhatsApp (Google)' })
+    setTimeout(recargar, 800)
+  }
+  return (
+    <div className='card'>
+      <div className='flex items-start justify-between gap-2'>
+        <div>
+          <p className='font-medium'>{x.cliente?.nombre || 'Cliente'} <span className='text-xs text-gray-400'>{x.g}</span></p>
+          <p className='text-xs text-gray-500'>{modelos}{x.entregado ? ` · entregado ${fechaCorta(x.entregado)}` : ''}</p>
+          {x.pedida && <p className='text-xs text-amber-700 mt-0.5'>⭐ Reseña pedida el {fechaCorta(x.pedida)}</p>}
+        </div>
+        <button type='button' onClick={() => setAbierto(!abierto)} className='text-xs underline text-gray-500 shrink-0'>{abierto ? 'Cerrar' : 'Ver mensaje'}</button>
+      </div>
+      {abierto && <textarea aria-label='Mensaje de reseña' className='w-full mt-2 text-sm' rows={7} value={texto} onChange={e => setTexto(e.target.value)} />}
+      {telWa ? (
+        <a className='mt-2 block text-center rounded-lg bg-amber-500 text-white py-2 text-sm font-medium' href={`https://wa.me/${telWa}?text=${encodeURIComponent(texto)}`} target='_blank' rel='noreferrer' onClick={anotar}>
+          ⭐ {x.pedida ? 'Pedir reseña otra vez' : 'Pedir reseña por WhatsApp'}
+        </a>
+      ) : <p className='mt-2 text-xs text-red-600'>Este cliente no tiene teléfono en el ERP.</p>}
+    </div>
+  )
+}
