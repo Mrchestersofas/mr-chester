@@ -17,7 +17,9 @@ const M = [
   { id: 'bentley', n: 'Bentley', fotos: ['recto-sala', 'recto-lado'] },
   { id: 'charles', n: 'Charles', fotos: ['azul-sala', 'azul-frente'] },
 ]
-const T = [['1.80', 4590000, 1836000], ['2.00', 4990000, 1996000], ['2.20', 5590000, 2236000]]
+const T = [['1.80', 4590000, 1836000, '2 puestos'], ['2.00', 4990000, 1996000, '3 puestos'], ['2.20', 5590000, 2236000, '3 puestos plus']]
+// En 1.80 (2 puestos) se muestra primero la foto del sofá de 2 puestos para no confundir al cliente
+const fotosDe = (x, tz) => tz === 0 ? [x.id + '-2p', ...x.fotos] : x.fotos
 const C = [['gti-azul-oscuro', 'Azul oscuro'], ['gti-cafe', 'Café'], ['gti-beige', 'Beige'], ['gti-azul-celestial', 'Azul celestial'], ['gti-gris-azul', 'Gris azul'], ['gti-crema', 'Crema'], ['gti-camel', 'Camel'], ['gti-gris-medio', 'Gris medio'], ['gti-gris-claro', 'Gris claro'], ['gti-miel', 'Miel'], ['gti-vinotinto', 'Vinotinto'], ['gti-ocre', 'Ocre'], ['gti-negro', 'Negro'], ['gti-taupe', 'Taupe'], ['gti-verde-esmeralda', 'Verde esmeralda'], ['nb-cafe', 'Café'], ['nb-camel', 'Camel']]
 const colName = i => i < 0 ? '' : (C[i][0].startsWith('nb') ? 'Assia Novo Bic ' : 'Assia GTI ') + C[i][1].toLowerCase()
 const fmt = n => '$' + n.toLocaleString('es-CO')
@@ -71,14 +73,14 @@ export default function BlackFriday() {
     if (tel.length < 10) { setMsg('Escribe tu celular completo (10 dígitos)'); return }
     if (modo === 'tienda' && hSel === null) { setMsg('Escoge la hora de tu visita'); return }
     setEnviando(true); setMsg('')
-    const sofa = `el ${m.n} de ${t[0]} m (${fmt(t[2])})${col >= 0 ? ' en ' + colName(col) : ''}`
+    const sofa = `el ${m.n} de ${t[0]} m, ${t[3]} (${fmt(t[2])})${col >= 0 ? ' en ' + colName(col) : ''}`
     const n1 = nombre.trim().split(' ')[0]
     const texto = modo === 'tienda'
       ? `Hola Mr. Chester! Soy ${n1}. Agendé visita a la tienda ${citaTxt()} para ver ${sofa} con 60% de Black Friday.`
       : `Hola Mr. Chester! Soy ${n1}. Quiero ${sofa} con 60% de Black Friday.`
     try {
       const { error } = await supabase.rpc('registrar_lead', {
-        p_nombre: nombre.trim(), p_telefono: tel, p_interes: `${m.n} ${t[0]} m`, p_fuente: fuente,
+        p_nombre: nombre.trim(), p_telefono: tel, p_interes: `${m.n} ${t[0]} m (${t[3]})`, p_fuente: fuente,
         p_color: col >= 0 ? colName(col) : null, p_cita: modo === 'tienda' ? citaISO(D[dSel], hSel) : null,
       })
       if (error && /cita_llena/.test(error.message)) { setMsg('Esa hora se acaba de llenar. Escoge otra, por favor.'); setHSel(null); setEnviando(false); return }
@@ -118,20 +120,21 @@ export default function BlackFriday() {
         <h2>Escoge tu Chester</h2>
         <p className='sub'>Todos con 60% de descuento. Escoge el tamaño y toca las fotos para verlos de frente y en sala.</p>
         <div className='sizes' role='radiogroup' aria-label='Tamaño'>
-          {T.map((x, i) => <button key={x[0]} className={`sz ${i === tz ? 'on' : ''}`} role='radio' aria-checked={i === tz} onClick={() => setTz(i)}>{x[0]} m</button>)}
+          {T.map((x, i) => <button key={x[0]} className={`sz ${i === tz ? 'on' : ''}`} role='radio' aria-checked={i === tz} onClick={() => setTz(i)}>{x[0]} m<small>{x[3]}</small></button>)}
         </div>
         <div className='tabla'>
-          {T.map((x, i) => <div key={x[0]} className={i === tz ? 'on' : ''}><small>{x[0]} metros</small><s>{fmt(x[1])}</s><b>{fmt(x[2])}</b></div>)}
+          {T.map((x, i) => <div key={x[0]} className={i === tz ? 'on' : ''}><small>{x[0]} m · {x[3]}</small><s>{fmt(x[1])}</s><b>{fmt(x[2])}</b></div>)}
         </div>
         <div className='grid'>
           {M.map((x, i) => {
-            const f = foto[x.id] || x.fotos[0]
+            const fs = fotosDe(x, tz)
+            const f = fs.includes(foto[x.id]) ? foto[x.id] : fs[0]
             return (
               <article key={x.id} className='m'>
                 <div className={`ph ${f.includes('sala') ? '' : 'prod'}`}><img src={IMG(f)} alt={`Sofá ${x.n}`} loading='lazy' /><span className='badge'>-60%</span></div>
-                <div className='ths'>{x.fotos.map((y, j) => <button key={y} className={`th ${y === f ? 'on' : ''}`} aria-label={`Ver foto ${j + 1}`} onClick={() => setFoto({ ...foto, [x.id]: y })}><img src={IMG(y)} alt='' /></button>)}</div>
+                <div className='ths'>{fs.map((y, j) => <button key={y} className={`th ${y === f ? 'on' : ''}`} aria-label={`Ver foto ${j + 1}`} onClick={() => setFoto({ ...foto, [x.id]: y })}><img src={IMG(y)} alt='' /></button>)}</div>
                 <div className='tx'>
-                  <h3>{x.n}</h3><div className='mat'>{t[0]} metros</div>
+                  <h3>{x.n}</h3><div className='mat'>{t[0]} metros · <b style={{ color: 'var(--gold2)' }}>{t[3]}</b></div>
                   <div className='pr'><s>{fmt(t[1])}</s><b>{fmt(t[2])}</b></div>
                   <button className={`pick ${i === sel ? 'on' : ''}`} onClick={() => { setSel(i); ir('aparta') }}>{i === sel ? '✓ Este quiero' : 'Lo quiero'}</button>
                 </div>
@@ -171,11 +174,11 @@ export default function BlackFriday() {
             <button type='button' className={`mb ${modo === 'wa' ? 'on' : ''}`} onClick={() => setModo('wa')}>💬<b>Que me escriban</b><span>Por WhatsApp</span></button>
             <button type='button' className={`mb ${modo === 'tienda' ? 'on' : ''}`} onClick={() => setModo('tienda')}>🏬<b>Visitar la tienda</b><span>Agenda tu cita</span></button>
           </div>
-          <div className='sel'><img src={IMG(m.fotos[0])} alt='' /><div><b>{m.n}</b><span>{fmt(t[2])} · {t[0]} m</span>
+          <div className='sel'><img src={IMG(fotosDe(m, tz)[0])} alt='' /><div><b>{m.n}</b><span>{fmt(t[2])} · {t[0]} m · {t[3]}</span>
             {col >= 0 && <small style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13 }}><img src={`/blackfriday/col/${C[col][0]}.jpg`} alt='' style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover' }} />{C[col][1]}</small>}</div></div>
           <form onSubmit={enviar}>
             <label>Modelo<select value={sel} onChange={e => setSel(+e.target.value)}>{M.map((x, i) => <option key={x.id} value={i}>{x.n}</option>)}</select></label>
-            <label>Tamaño<select value={tz} onChange={e => setTz(+e.target.value)}>{T.map((x, i) => <option key={x[0]} value={i}>{x[0]} metros · {fmt(x[2])}</option>)}</select></label>
+            <label>Tamaño<select value={tz} onChange={e => setTz(+e.target.value)}>{T.map((x, i) => <option key={x[0]} value={i}>{x[0]} m · {x[3]} · {fmt(x[2])}</option>)}</select></label>
             <label>Color<select value={col} onChange={e => setCol(+e.target.value)}><option value={-1}>Lo defino por WhatsApp</option>{C.map((c, i) => <option key={c[0]} value={i}>{colName(i).replace(/^./, z => z.toUpperCase())}</option>)}</select></label>
             {modo === 'tienda' && (
               <div>
@@ -277,7 +280,8 @@ footer{text-align:center;padding:34px 18px 50px;color:var(--mut);font-size:14px;
 footer img{height:44px;width:auto;margin:0 auto 10px}
 
 .sizes{display:flex;justify-content:center;gap:10px;margin:0 auto 18px;flex-wrap:wrap}
-.sz{min-height:48px;min-width:96px;border-radius:14px;border:1px solid var(--gold);background:transparent;color:var(--gold2);font:800 17px Montserrat,sans-serif;cursor:pointer;padding:0 16px}
+.sz{min-height:48px;min-width:96px;border-radius:14px;border:1px solid var(--gold);background:transparent;color:var(--gold2);font:800 17px Montserrat,sans-serif;cursor:pointer;padding:6px 16px}
+.sz small{display:block;font:600 11px Montserrat,sans-serif;letter-spacing:.5px;opacity:.85;margin-top:-2px}
 .sz.on{background:var(--gold);color:#1a120b}
 .sz:focus-visible{outline:3px solid var(--gold2);outline-offset:3px}
 .tabla{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:620px;margin:0 auto 30px;border:1px solid var(--line);border-radius:16px;overflow:hidden;text-align:center}
@@ -320,4 +324,3 @@ footer img{height:44px;width:auto;margin:0 auto 10px}
 .hr2:disabled{opacity:.3;cursor:not-allowed;text-decoration:line-through}
 .dir{font-size:14px;color:var(--mut);margin:12px 0 0}.dir a{color:var(--gold2)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
-`
