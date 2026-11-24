@@ -324,3 +324,5 @@ footer img{height:44px;width:auto;margin:0 auto 10px}
 .hr2:disabled{opacity:.3;cursor:not-allowed;text-decoration:line-through}
 .dir{font-size:14px;color:var(--mut);margin:12px 0 0}.dir a{color:var(--gold2)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+`
+
