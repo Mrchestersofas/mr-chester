@@ -17,6 +17,8 @@ const PASOS = [
   { key: 'fabricacion', label: 'En fabricación', desc: 'Nuestros artesanos están haciendo tu sofá a mano.' },
   { key: 'terminando', label: 'Terminando', desc: 'Estamos dando los últimos detalles y la revisión final.' },
   { key: 'listo', label: 'Listo para entrega', desc: 'Tu sofá está terminado. Coordinamos contigo la entrega.' },
+  // Opcional (envíos fuera de Bogotá): solo se muestra si Atención al cliente lo marca
+  { key: 'en_ruta', label: 'Despachado · en ruta', desc: 'Tu sofá ya fue despachado y va en camino. El envío a tu ciudad toma unos 5 a 6 días.' },
   { key: 'entregado', label: 'Entregado', desc: '¡Disfrútalo!' },
 ]
 
@@ -98,9 +100,10 @@ Seguimiento.sinLayout = true
 export default Seguimiento
 
 function Pedido({ p }) {
-  const idx = Math.max(0, PASOS.findIndex(s => s.key === p.estado_cliente))
-  const actual = PASOS[idx]
-  const pct = Math.round(idx / (PASOS.length - 1) * 100)
+  const pasos = PASOS.filter(s => s.key !== 'en_ruta' || p.estado_cliente === 'en_ruta')
+  const idx = Math.max(0, pasos.findIndex(s => s.key === p.estado_cliente))
+  const actual = pasos[idx]
+  const pct = Math.round(idx / (pasos.length - 1) * 100)
   const entregado = p.estado_cliente === 'entregado'
   return (
     <div className='bg-white rounded-2xl overflow-hidden shadow-sm'>
@@ -131,7 +134,7 @@ function Pedido({ p }) {
         )}
 
         <ol className='space-y-0'>
-          {PASOS.map((s, i) => {
+          {pasos.map((s, i) => {
             const hecho = i < idx || entregado
             const esActual = i === idx && !entregado
             return (
@@ -141,7 +144,7 @@ function Pedido({ p }) {
                     style={{ background: hecho ? '#2F7A4C' : esActual ? ORO : '#e7e1d4', color: hecho || esActual ? '#fff' : '#999' }}>
                     {hecho ? '✓' : ''}
                   </span>
-                  {i < PASOS.length - 1 && <span style={{ width: 2, flex: 1, minHeight: 14, background: hecho ? '#2F7A4C' : '#e7e1d4' }} />}
+                  {i < pasos.length - 1 && <span style={{ width: 2, flex: 1, minHeight: 14, background: hecho ? '#2F7A4C' : '#e7e1d4' }} />}
                 </div>
                 <div className={`pb-3 text-sm ${esActual ? 'font-semibold' : hecho ? 'text-gray-700' : 'text-gray-400'}`}>{s.label}</div>
               </li>
