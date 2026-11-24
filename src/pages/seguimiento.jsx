@@ -10,15 +10,14 @@ const ORO = '#C9A84C'
 const NEGRO = '#1a1a1a'
 const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
+// Lo que ve el cliente: 5 estados sencillos. Atención al cliente los mueve a mano;
+// si la fábrica va más adelante, se muestra el de la fábrica (nunca se devuelve).
 const PASOS = [
-  { key: 'cola', label: 'Pedido confirmado', desc: 'Tu sofá está en la fila de producción.' },
-  { key: 'estructura', label: 'Estructura', desc: 'Armamos la base en madera.' },
-  { key: 'espumado', label: 'Espumado', desc: 'Ponemos las espumas y el confort.' },
-  { key: 'corte_tela', label: 'Corte y costura', desc: 'Cortamos y cosemos tu tela a la medida.' },
-  { key: 'tapizado', label: 'Tapizado', desc: 'Forramos tu sofá a mano.' },
-  { key: 'terminado', label: 'Terminado', desc: 'Capitoné, botones, detalles y revisión final.' },
-  { key: 'despacho', label: 'Listo para entrega', desc: 'Coordinamos contigo la entrega.' },
-  { key: 'completado', label: 'Entregado', desc: '¡Disfrútalo!' },
+  { key: 'confirmado', label: 'Pedido confirmado', desc: 'Recibimos tu pedido y separamos tu cupo de fabricación.' },
+  { key: 'fabricacion', label: 'En fabricación', desc: 'Nuestros artesanos están haciendo tu sofá a mano.' },
+  { key: 'terminando', label: 'Terminando', desc: 'Estamos dando los últimos detalles y la revisión final.' },
+  { key: 'listo', label: 'Listo para entrega', desc: 'Tu sofá está terminado. Coordinamos contigo la entrega.' },
+  { key: 'entregado', label: 'Entregado', desc: '¡Disfrútalo!' },
 ]
 
 function fechaLarga(iso) {
@@ -99,10 +98,10 @@ Seguimiento.sinLayout = true
 export default Seguimiento
 
 function Pedido({ p }) {
-  const idx = Math.max(0, PASOS.findIndex(s => s.key === (p.etapa === 'control_calidad' ? 'terminado' : p.etapa)))
+  const idx = Math.max(0, PASOS.findIndex(s => s.key === p.estado_cliente))
   const actual = PASOS[idx]
   const pct = Math.round(idx / (PASOS.length - 1) * 100)
-  const entregado = p.etapa === 'completado'
+  const entregado = p.estado_cliente === 'entregado'
   return (
     <div className='bg-white rounded-2xl overflow-hidden shadow-sm'>
       <div className='p-5 space-y-1' style={{ borderBottom: '1px solid #eee' }}>
