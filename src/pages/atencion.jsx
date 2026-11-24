@@ -116,7 +116,7 @@ export default function Atencion() {
 
   async function cargar() {
     const [{ data: filas, error: e }, { data: productos }, { data: hist }] = await Promise.all([
-      supabase.from('programacion_produccion').select('*, pedido:pedidos(id, numero, grupo, tipo_sofa, cantidad, estado, fecha_pedido, fecha_entrega, precio_venta, abono, cliente:clientes(nombre, telefono, ciudad))'),
+      supabase.from('programacion_produccion').select('*, pedido:pedidos(id, numero, grupo, tipo_sofa, cantidad, estado, estado_cliente, fecha_pedido, fecha_entrega, precio_venta, abono, cliente:clientes(nombre, telefono, ciudad))'),
       supabase.from('productos').select('referencia, categoria'),
       supabase.from('historial_estados').select('pedido_id, nota, created_at').ilike('nota', 'Reprogramado%'),
     ])
@@ -170,12 +170,12 @@ export default function Atencion() {
         )
       })() : (<>
       <div className='flex gap-2 mb-4'>
-        {[['retrasados', `⏰ Retrasados (${lista.length})`], ['confirmar', '✅ Confirmar entrega'], ['resenas', '⭐ Reseñas']].map(([k, l]) => (
+        {[['retrasados', `⏰ Retrasados (${lista.length})`], ['estado', '📍 Estado cliente'], ['confirmar', '✅ Confirmar'], ['resenas', '⭐ Reseñas']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg ${tab === k ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{l}</button>
         ))}
       </div>
 
-      {tab === 'resenas' ? <Resenas /> : tab === 'confirmar' ? (() => {
+      {tab === 'resenas' ? <Resenas /> : tab === 'estado' ? <EstadosCliente todos={todos} recargar={cargar} /> : tab === 'confirmar' ? (() => {
         const vis = todos
         return (
           <>
@@ -324,6 +324,53 @@ function Retrasado({ x, hoy, recargar, medios, usados, modo: modoInicial = 'disc
         </div>
       )}
     </div>
+  )
+}
+
+/* Estado que ve el cliente en /seguimiento: 5 pasos que se mueven a mano desde aquí.
+   La programación de la fábrica sigue igual (solo interna). Si la fábrica va más adelante,
+   el cliente ve el estado de la fábrica: el estado nunca se devuelve. */
+const EST_CLI = [['confirmado', '📝', 'Confirmado'], ['fabricacion', '🔨', 'En fabricación'], ['terminando', '✨', 'Terminando'], ['listo', '📦', 'Listo para entrega'], ['entregado', '✅', 'Entregado']]
+function estadoAuto(etapa) { return etapa === 'completado' ? 4 : etapa === 'despacho' ? 3 : (etapa === 'terminado' || etapa === 'control_calidad') ? 2 : etapa === 'cola' ? 0 : 1 }
+function EstadosCliente({ todos, recargar }) {
+  const [guardando, setGuardando] = useState(null)
+  async function poner(x, k) {
+    setGuardando(x.g)
+    const ids = x.items.map(i => i.pedido.id)
+    const { error } = await supabase.from('pedidos').update({ estado_cliente: k }).in('id', ids)
+    setGuardando(null)
+    if (error) { alert('No se pudo guardar: ' + error.message); return }
+    recargar()
+  }
+  return (
+    <>
+      <p className='text-xs text-gray-500 mb-2'>Esto es lo que el cliente ve en su seguimiento. Tócalo para cambiarlo. La producción interna no cambia.</p>
+      <div className='space-y-3'>
+        {todos.map(x => {
+          const manual = Math.max(...x.items.map(i => EST_CLI.findIndex(e => e[0] === i.pedido.estado_cliente)))
+          const auto = Math.min(...x.items.map(i => estadoAuto(i.etapa_actual)))
+          const actual = Math.max(manual, auto)
+          return (
+            <div key={'e' + x.g} className='card'>
+              <div className='flex justify-between gap-2 mb-2'>
+                <div><div className='font-semibold'>{x.cliente?.nombre || 'Cliente'}</div><div className='text-xs text-gray-500'>{x.g} · {x.items.map(i => i.pedido.tipo_sofa).join(', ')}</div></div>
+                <div className='text-xs text-gray-500 text-right whitespace-nowrap'>Entrega<br /><b>{fechaCorta(x.prometida)}</b></div>
+              </div>
+              <div className='grid grid-cols-5 gap-1'>
+                {EST_CLI.map(([k, ic, l], i) => (
+                  <button key={k} disabled={guardando === x.g || i < auto} onClick={() => poner(x, k)}
+                    className={`rounded-xl py-2 px-1 text-[11px] leading-tight font-semibold border ${i === actual ? 'bg-gray-900 text-white border-gray-900' : i < actual ? 'bg-green-50 text-green-800 border-green-200' : 'bg-white text-gray-600 border-gray-200'} disabled:opacity-60`}>
+                    <div className='text-lg'>{i < actual ? '✓' : ic}</div>{l}
+                  </button>
+                ))}
+              </div>
+              {auto > manual && <p className='text-[11px] text-gray-500 mt-1.5'>La fábrica ya va en este paso, así que el cliente lo ve automático.</p>}
+            </div>
+          )
+        })}
+        {!todos.length && <div className='card text-center text-gray-500 py-6'>No hay pedidos activos.</div>}
+      </div>
+    </>
   )
 }
 
