@@ -8,7 +8,10 @@ export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter()
 
   // En el celular de quien ayuda en la casa, el ícono abre directo su página
+  // Las páginas públicas (Black Friday, seguimiento…) nunca redirigen, aunque el celular esté en modo Taller o Casa
+  const publica = !!(Component as any).sinLayout && router.pathname !== '/taller' && router.pathname !== '/casa'
   useEffect(() => {
+    if (publica) return
     let modoCasa = false, modoTaller = false
     try {
       modoCasa = localStorage.getItem('modoCasa') === '1'
@@ -17,7 +20,7 @@ export default function App({ Component, pageProps }: AppProps) {
     if (modoCasa && router.pathname !== '/casa') router.replace('/casa')
     // En el celular de los encargados de fábrica, el ícono abre directo el Taller
     else if (modoTaller && router.pathname !== '/taller') router.replace('/taller')
-  }, [router.pathname])
+  }, [router.pathname, publica])
 
   if ((Component as any).sinLayout) return <Component {...pageProps} />
   return (
