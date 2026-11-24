@@ -383,9 +383,13 @@ function TabHistorial() {
   const [lista, setLista] = useState(null)
   const [abierto, setAbierto] = useState(null)
   const [recep, setRecep] = useState([])
-  useEffect(() => {
+  const [fact, setFact] = useState(null)
+  function cargarLista() {
     supabase.from('compra_pedidos').select('*').order('fecha', { ascending: false }).order('created_at', { ascending: false }).limit(150)
       .then(({ data }) => setLista(data || []))
+  }
+  useEffect(() => {
+    cargarLista()
     supabase.from('compra_recepciones').select('*').gte('created_at', sumarDias(hoyISO(), -60)).order('created_at', { ascending: false })
       .then(({ data }) => setRecep(data || []))
   }, [])
@@ -417,6 +421,7 @@ function TabHistorial() {
               <div className='font-medium'>{x.proveedor_nombre}</div>
               <div className='text-xs text-gray-500 capitalize'>{fechaTexto(x.fecha)} · {horaTexto(x.created_at)}</div>
               {conControl(x) && ESTADO[x.estado] && <span className={`inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${ESTADO[x.estado][1]}`}>{ESTADO[x.estado][0]}</span>}
+              <BadgeFactura x={x} />
             </div>
             <div className='font-semibold whitespace-nowrap'>{pesos(x.total)}</div>
           </button>
@@ -435,10 +440,155 @@ function TabHistorial() {
                 )
               })}
               {Number(x.costo_fijo) > 0 && <li className='flex justify-between text-gray-600'><span>Transporte</span><span>{pesos(x.costo_fijo)}</span></li>}
+              <li className='pt-2 flex gap-2'>
+                <button className='btn flex-1 justify-center' onClick={() => setFact(x)}>🧾 {x.factura ? 'Ver / editar factura' : 'Registrar factura'}</button>
+                {x.factura?.soporte && <button className='btn' onClick={() => verArchivo(x.factura.soporte)}>📎 Foto</button>}
+              </li>
             </ul>
           )}
         </div>
       ))}
+      {fact && <FacturaCompra x={fact} recep={recep.filter(r => r.pedido_id === fact.id)} cerrar={() => setFact(null)} listo={() => { setFact(null); cargarLista() }} />}
+    </div>
+  )
+}
+
+/* ---------------- FACTURA DE COMPRA ----------------
+   Foto de la factura del proveedor + precios y cantidades que realmente cobraron.
+   Compara con lo que se pidió y, si un precio cambió, lo actualiza en Compras (insumo del proveedor)
+   y en Materiales (costo_unitario), para que los costos usen el precio real. */
+
+async function reducirImagen(file) {
+  if (!file.type.startsWith('image/')) return file
+  try {
+    const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = URL.createObjectURL(file) })
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height))
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k)
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82))
+    return b ? new File([b], 'factura.jpg', { type: 'image/jpeg' }) : file
+  } catch (er) { return file }
+}
+
+async function verArchivo(ruta) {
+  const { data, error } = await supabase.storage.from('soportes').createSignedUrl(ruta, 600)
+  if (error || !data?.signedUrl) { alert('No se pudo abrir la foto.'); return }
+  window.open(data.signedUrl, '_blank')
+}
+
+const totalPedido = x => (x.items || []).reduce((s, i) => s + Number(i.precio) * Number(i.cantidad), 0) + Number(x.costo_fijo || 0)
+
+function BadgeFactura({ x }) {
+  if (!x.factura) return null
+  const dif = Number(x.factura.total) - totalPedido(x)
+  return (
+    <span className={`inline-block mt-1 ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${Math.abs(dif) < 1 ? 'bg-green-100 text-green-800' : dif > 0 ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+      🧾 {x.factura.numero ? `#${x.factura.numero}` : 'Factura'}{Math.abs(dif) >= 1 ? ` · ${dif > 0 ? '+' : '−'}${pesos(Math.abs(dif))}` : ' ✓'}
+    </span>
+  )
+}
+
+const mismoMaterial = (mat, nombre) => {
+  const a = String(mat || '').trim().toLowerCase(), b = String(nombre || '').trim().toLowerCase()
+  return !!b && (a === b || a.endsWith(' ' + b))
+}
+
+function FacturaCompra({ x, recep, cerrar, listo }) {
+  const f0 = x.factura || {}
+  const [numero, setNumero] = useState(f0.numero || '')
+  const [fecha, setFecha] = useState(f0.fecha || hoyISO())
+  const [archivo, setArchivo] = useState(null)
+  const [otros, setOtros] = useState(String(f0.otros ?? x.costo_fijo ?? 0))
+  const [items, setItems] = useState(() => (x.items || []).map((i, k) => {
+    const prev = (f0.items || [])[k]
+    const r = recep.find(z => z.item_idx === k)
+    return { nombre: i.nombre, unidad: i.unidad, pedido: Number(i.cantidad), precioPedido: Number(i.precio),
+      cantidad: String(prev ? prev.cantidad : r ? r.cantidad_recibida : i.cantidad), precio: String(prev ? prev.precio : i.precio) }
+  }))
+  const [mats, setMats] = useState([])
+  const [guardando, setGuardando] = useState(false)
+  const [msg, setMsg] = useState('')
+  useEffect(() => { supabase.from('materiales').select('id, nombre, costo_unitario').then(({ data }) => setMats(data || [])) }, [])
+
+  const setI = (k, v) => setItems(a => a.map((i, j) => j === k ? { ...i, ...v } : i))
+  const total = items.reduce((s, i) => s + (Number(i.precio) || 0) * (Number(i.cantidad) || 0), 0) + (Number(otros) || 0)
+  const dif = total - totalPedido(x)
+  const cambios = items.filter(i => Number(i.precio) > 0 && Number(i.precio) !== i.precioPedido)
+
+  async function guardar() {
+    setGuardando(true); setMsg('')
+    try {
+      let soporte = f0.soporte || null
+      if (archivo) {
+        const fl = await reducirImagen(archivo)
+        const ruta = `compras/${x.id}-${Date.now()}.${fl.type === 'application/pdf' ? 'pdf' : 'jpg'}`
+        const { error } = await supabase.storage.from('soportes').upload(ruta, fl, { contentType: fl.type, upsert: false })
+        if (error) throw error
+        if (soporte) await supabase.storage.from('soportes').remove([soporte])
+        soporte = ruta
+      }
+      const factura = { numero: numero.trim(), fecha, soporte, otros: Number(otros) || 0, total,
+        items: items.map(i => ({ nombre: i.nombre, unidad: i.unidad, cantidad: Number(i.cantidad) || 0, precio: Number(i.precio) || 0 })),
+        registrada: new Date().toISOString() }
+      const { error: e1 } = await supabase.from('compra_pedidos').update({ factura }).eq('id', x.id)
+      if (e1) throw e1
+      for (const i of cambios) {
+        const precio = Number(i.precio)
+        if (x.proveedor_id) await supabase.from('compra_insumos').update({ precio }).eq('proveedor_id', x.proveedor_id).eq('nombre', i.nombre)
+        const ids = mats.filter(m => mismoMaterial(m.nombre, i.nombre)).map(m => m.id)
+        if (ids.length) await supabase.from('materiales').update({ costo_unitario: precio }).in('id', ids)
+      }
+      listo()
+    } catch (er) { setMsg('No se pudo guardar: ' + (er.message || er)); setGuardando(false) }
+  }
+
+  return (
+    <div className='fixed inset-0 bg-black/50 z-40 flex items-end md:items-center justify-center p-0 md:p-4' onClick={cerrar}>
+      <div className='bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl max-h-[92vh] overflow-y-auto p-4 space-y-3' onClick={e => e.stopPropagation()}>
+        <div className='flex justify-between items-start'>
+          <div><div className='font-semibold'>🧾 Factura de {x.proveedor_nombre}</div><div className='text-xs text-gray-500 capitalize'>Pedido del {fechaTexto(x.fecha)}</div></div>
+          <button className='text-gray-400 text-xl leading-none px-2' onClick={cerrar} aria-label='Cerrar'>×</button>
+        </div>
+
+        <label className='block border-2 border-dashed border-gray-300 rounded-xl p-4 text-center cursor-pointer'>
+          <input type='file' accept='image/*,application/pdf' capture='environment' className='hidden' onChange={e => setArchivo(e.target.files?.[0] || null)} />
+          <div className='text-3xl'>📷</div>
+          <div className='text-sm font-medium'>{archivo ? archivo.name : f0.soporte ? 'Cambiar foto de la factura' : 'Tomar foto de la factura'}</div>
+        </label>
+
+        <div className='grid grid-cols-2 gap-2'>
+          <L t='Número de factura'><input value={numero} onChange={e => setNumero(e.target.value)} placeholder='Ej: FE-1234' /></L>
+          <L t='Fecha'><input type='date' value={fecha} onChange={e => setFecha(e.target.value)} /></L>
+        </div>
+
+        <div className='space-y-2'>
+          <div className='text-xs text-gray-500'>Lo que dice la factura (ya viene con lo que pediste)</div>
+          {items.map((i, k) => {
+            const subio = Number(i.precio) > 0 && Number(i.precio) !== i.precioPedido
+            const enMat = mats.filter(m => mismoMaterial(m.nombre, i.nombre))
+            return (
+              <div key={k} className={`rounded-xl border p-2 ${subio ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
+                <div className='text-sm font-medium'>{i.nombre} <span className='text-xs text-gray-500'>· pediste {num(i.pedido)} {i.unidad} a {pesos(i.precioPedido)}</span></div>
+                <div className='grid grid-cols-2 gap-2 mt-1'>
+                  <L t='Cantidad facturada'><input inputMode='decimal' value={i.cantidad} onChange={e => setI(k, { cantidad: e.target.value.replace(/[^\d.]/g, '') })} /></L>
+                  <L t='Precio unitario'><input inputMode='numeric' value={i.precio} onChange={e => setI(k, { precio: e.target.value.replace(/[^\d.]/g, '') })} /></L>
+                </div>
+                {subio && <div className='text-xs text-amber-800 mt-1'>{Number(i.precio) > i.precioPedido ? '⬆ Subió' : '⬇ Bajó'} {pesos(Math.abs(Number(i.precio) - i.precioPedido))} por {i.unidad || 'unidad'} · se actualiza en Compras{enMat.length ? ' y en Materiales' : ''}</div>}
+              </div>
+            )
+          })}
+          <L t='Transporte u otros cargos'><input inputMode='numeric' value={otros} onChange={e => setOtros(e.target.value.replace(/[^\d]/g, ''))} /></L>
+        </div>
+
+        <div className={`rounded-xl p-3 ${Math.abs(dif) < 1 ? 'bg-green-50 text-green-800' : dif > 0 ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+          <div className='flex justify-between text-sm'><span>Pediste</span><span>{pesos(totalPedido(x))}</span></div>
+          <div className='flex justify-between font-semibold'><span>Te facturaron</span><span>{pesos(total)}</span></div>
+          <div className='text-sm mt-1'>{Math.abs(dif) < 1 ? '✓ Coincide con lo que pediste' : dif > 0 ? `⚠ Te cobraron ${pesos(dif)} más` : `Te cobraron ${pesos(-dif)} menos`}</div>
+        </div>
+
+        {msg && <p className='text-sm text-red-700'>{msg}</p>}
+        <button className='w-full rounded-xl py-3 font-bold' style={{ background: '#1a1a1a', color: '#C9A84C' }} disabled={guardando} onClick={guardar}>{guardando ? 'Guardando…' : 'Guardar factura'}</button>
+      </div>
     </div>
   )
 }
