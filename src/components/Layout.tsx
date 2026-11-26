@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   LayoutDashboard, ClipboardList, PlusCircle,
-  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText, CalendarDays, Truck, Wallet, LogOut, Target, MessageCircle, Landmark, GraduationCap, Headphones, BadgeDollarSign
+  Wrench, Package, Calculator, Users, Factory, ShoppingCart, Menu, X, TrendingUp, Sun, FileText, CalendarDays, Truck, Wallet, LogOut, Target, MessageCircle, Landmark, GraduationCap, Headphones, BadgeDollarSign, Squirrel
 } from 'lucide-react'
 
 const navItems = [
@@ -28,6 +28,7 @@ const navItems = [
   { href: '/costos',        label: 'Costos',        icon: Calculator },
   { href: '/clientes',      label: 'Clientes',      icon: Users },
   { href: '/capacitacion',  label: 'Capacitación',  icon: GraduationCap },
+  { href: '/nuts',          label: 'Mr. Nuts',      icon: Squirrel },
 ]
 
 // Quiénes pueden entrar al ERP. El usuario "joseph" usa su correo; los demás, usuario@envios.mrchester.com.co
