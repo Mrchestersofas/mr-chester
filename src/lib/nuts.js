@@ -52,3 +52,15 @@ export function Empaque({ tipo, color = '#fff', size = 40 }) {
   if (tipo === 'caja') return <svg viewBox='0 0 40 40' style={s} aria-hidden='true'><rect {...p} x='6' y='14' width='28' height='21' rx='2' /><path {...p} d='M6 14 L10 7 H30 L34 14 M20 14 V35' /><path {...p} d='M15 7 Q20 13 25 7' /></svg>
   return <svg viewBox='0 0 40 40' style={s} aria-hidden='true'><rect {...p} x='9' y='5' width='22' height='6' rx='2' /><rect {...p} x='10' y='11' width='20' height='25' rx='3' /><circle cx='16' cy='24' r='2.8' fill={color} /><circle cx='23' cy='21' r='2.8' fill={color} /><circle cx='21' cy='29' r='2.8' fill={color} /></svg>
 }
+
+// Ventana emergente (abajo en celular, centrada en computador)
+export function Modal({ titulo, cerrar, children }) {
+  return (
+    <div className='fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3' style={{ background: 'rgba(0,0,0,.45)' }} onClick={cerrar}>
+      <div className='bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto' onClick={e => e.stopPropagation()}>
+        <div className='flex justify-between items-start gap-3'><h3 className='text-lg font-bold'>{titulo}</h3><button aria-label='Cerrar' onClick={cerrar} className='text-2xl leading-none text-gray-400'>×</button></div>
+        {children}
+      </div>
+    </div>
+  )
+}
