@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { CARAMELO, pesos, gramos } from '@/lib/nuts'
-import { Modal } from '@/components/nuts/NutsVender'
+import { CARAMELO, pesos, gramos, colorNuez, Modal } from '@/lib/nuts'
 
 /* Producción: caja cruda → batches (bolsitas para la máquina) → caramelizado (cada batch = un lote / una bandeja).
    Cada paso descuenta del anterior, así se ve si se pierde nuez cruda o si un lote rinde menos. */
@@ -17,20 +16,19 @@ export default function NutsProduccion({ datos, rpc }) {
           const batches = Number(datos.batches[n.id] || 0)
           const abiertos = datos.lotes.filter(l => l.nuez_id === n.id)
           return (
-            <div key={n.id} className='bg-white rounded-2xl p-4 shadow-sm space-y-3'>
+            <div key={n.id} className='bg-white rounded-2xl overflow-hidden shadow-sm'><div style={{ background: colorNuez(n.nombre), height: 10 }} /><div className='p-4 space-y-3'>
               <div className='flex justify-between items-baseline'><h2 className='text-lg font-bold'>{n.nombre}</h2><span className='text-xs text-gray-500'>{n.nuez_g} g + {n.azucar_g} g azúcar + {n.canela_g} g canela</span></div>
               <div className='grid grid-cols-3 gap-2 text-center'>
                 <Dato v={(crudo / 1000).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' kg'} t='crudo' />
                 <Dato v={batches} t='batches listos' />
                 <Dato v={abiertos.length} t='bandejas abiertas' />
               </div>
-              <div className='text-xs text-gray-500'>Con el crudo alcanza para {Math.floor(crudo / n.nuez_g)} batches más.</div>
-              <div className='grid grid-cols-3 gap-2'>
-                <Boton onClick={() => setAccion({ tipo: 'compra', n })}>📦 Compra</Boton>
-                <Boton onClick={() => setAccion({ tipo: 'batches', n, max: Math.floor(crudo / n.nuez_g) })}>🛍️ Batches</Boton>
-                <Boton onClick={() => setAccion({ tipo: 'maquina', n })} disabled={batches < 1}>🔥 Máquina</Boton>
+              <div className='text-xs text-gray-500'>Con el crudo alcanza para {Math.floor(crudo / n.nuez_g)} batches más. La compra de crudo se registra en Compras.</div>
+              <div className='grid grid-cols-2 gap-2'>
+                <Boton onClick={() => setAccion({ tipo: 'batches', n, max: Math.floor(crudo / n.nuez_g) })}>🛍️ Armar batches</Boton>
+                <Boton onClick={() => setAccion({ tipo: 'maquina', n })} disabled={batches < 1}>🔥 A la máquina</Boton>
               </div>
-            </div>
+            </div></div>
           )
         })}
       </div>
