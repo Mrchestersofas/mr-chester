@@ -70,13 +70,16 @@ function Nuts() {
   const actual = vista && tabs.some(t => t[0] === vista) ? vista : tabs[0]?.[0]
 
   return (
-    <div style={{ minHeight: '100vh', background: '#FBF7F1', color: '#1F1A14' }}>
+    <div style={{ minHeight: '100vh', background: '#F6EFE6', color: '#2B1A0E' }}>
       <Head><title>Mr. Nuts</title><meta name='viewport' content='width=device-width, initial-scale=1' /></Head>
       <header style={{ background: CARAMELO, color: '#fff', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className='max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3'>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 22, letterSpacing: 1 }}>MR. NUTS</div>
-            {yo && <div style={{ fontSize: 13, opacity: .9 }}>Hola {yo.nombre}</div>}
+          <div className='flex items-center gap-3'>
+            <img src='/nuts-ardilla.jpg' alt='' style={{ width: 44, height: 58, objectFit: 'cover', borderRadius: 10 }} />
+            <div>
+              <div style={{ fontWeight: 300, fontSize: 26, lineHeight: 1, color: '#E7E3DF' }}>Mr Nuts</div>
+              <div style={{ fontSize: 11, letterSpacing: 2, color: '#C9A07A', fontWeight: 600 }}>{yo ? 'HOLA ' + yo.nombre.toUpperCase() : 'FRESH ROASTED NUTS'}</div>
+            </div>
           </div>
           {yo && <button onClick={salir} className='rounded-lg px-3 py-2 text-sm font-semibold' style={{ border: '1px solid rgba(255,255,255,.6)' }}>Salir</button>}
         </div>
@@ -110,7 +113,8 @@ function Entrar({ entrar }) {
   const [k, setK] = useState('')
   return (
     <form onSubmit={e => { e.preventDefault(); if (u && k) entrar(u, k) }} className='bg-white rounded-2xl p-5 shadow-sm space-y-3 max-w-sm mx-auto mt-6'>
-      <h1 className='text-xl font-bold'>Entrar</h1>
+      <img src='/nuts-logo.jpg' alt='Mr Nuts' className='w-48 mx-auto rounded-2xl' />
+      <h1 className='text-xl font-bold text-center'>Entrar</h1>
       <label className='block text-sm font-semibold'>Usuario<input value={u} onChange={e => setU(e.target.value)} autoCapitalize='none' autoComplete='username' className='w-full mt-1' style={{ fontSize: 18, padding: 12 }} /></label>
       <label className='block text-sm font-semibold'>PIN<input value={k} onChange={e => setK(e.target.value)} type='password' inputMode='numeric' autoComplete='current-password' className='w-full mt-1' style={{ fontSize: 18, padding: 12 }} /></label>
       <button className='w-full rounded-xl py-3 font-bold text-white' style={{ background: CARAMELO }}>Entrar</button>
