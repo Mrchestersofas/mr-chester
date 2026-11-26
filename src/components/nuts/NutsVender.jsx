@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CARAMELO, pesos, gramos } from '@/lib/nuts'
+import { CARAMELO, pesos, gramos, colorNuez, tipoEmpaque, Empaque } from '@/lib/nuts'
 
 /* POS de la tienda: se toca el producto, se cobra, y el sistema descuenta los gramos de los lotes (bandejas)
    abiertos de cada nuez, del más viejo al más nuevo. Si el producto ya estaba armado (stock), sale de ahí.
@@ -39,32 +39,46 @@ export default function NutsVender({ datos, rpc }) {
       <section>
         <h2 className='font-bold mb-2'>Bandejas abiertas</h2>
         {datos.lotes.length === 0 && <p className='bg-white rounded-xl p-4 text-sm text-gray-600'>No hay lotes abiertos. Producción tiene que registrar el caramelizado para poder vender.</p>}
-        <div className='grid gap-2' style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
-          {datos.lotes.map(l => (
-            <button key={l.id} onClick={() => setLote(l)} className='bg-white rounded-xl p-3 text-left shadow-sm space-y-1' style={{ border: '1px solid #EADFCF' }}>
-              <div className='font-bold'>{nombreNuez(l.nuez_id)}</div>
-              <div className='text-xs text-gray-500'>Lote {l.codigo}</div>
-              <div className='h-2 rounded-full overflow-hidden' style={{ background: '#F1E8DA' }}>
-                <div className='h-full' style={{ width: Math.max(0, l.restante / l.salida * 100) + '%', background: CARAMELO }} />
-              </div>
-              <div className='text-xs text-gray-600'>Quedan {gramos(l.restante)}</div>
-            </button>
-          ))}
+        <div className='grid gap-3' style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+          {datos.lotes.map(l => {
+            const pct = Math.max(0, Math.min(100, l.restante / l.salida * 100)), c = colorNuez(nombreNuez(l.nuez_id))
+            return (
+              <button key={l.id} onClick={() => setLote(l)} className='bg-white rounded-2xl p-3 text-left shadow-sm flex items-center gap-3' style={{ border: '1px solid #E7D9C6' }}>
+                <div className='relative flex-none rounded-full' style={{ width: 54, height: 54, background: `conic-gradient(${c} ${pct}%, #EFE6DA 0)` }}>
+                  <div className='absolute rounded-full bg-white flex items-center justify-center text-xs font-bold' style={{ inset: 7, color: CARAMELO }}>{Math.round(pct)}%</div>
+                </div>
+                <div className='min-w-0'>
+                  <div className='font-bold leading-tight'>{nombreNuez(l.nuez_id)}</div>
+                  <div className='text-xs text-gray-500'>{gramos(l.restante)}</div>
+                  <div className='text-[11px] text-gray-400'>{l.codigo}</div>
+                </div>
+              </button>
+            )
+          })}
         </div>
       </section>
 
       <section>
         <h2 className='font-bold mb-2'>Productos</h2>
         {productos.length === 0 && <p className='bg-white rounded-xl p-4 text-sm text-gray-600'>Todavía no hay productos. El administrador los crea en "Resumen y ajustes".</p>}
-        <div className='grid gap-2' style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
-          {productos.map(p => (
-            <button key={p.id} onClick={() => sumar(p.id, 1)} className='bg-white rounded-xl p-3 text-left shadow-sm relative' style={{ minHeight: 72, border: carrito[p.id] ? `2px solid ${CARAMELO}` : '1px solid #EADFCF' }}>
-              <div className='font-semibold leading-tight'>{p.nombre}</div>
-              <div className='text-sm text-gray-600 mt-1'>{pesos(p.precio)}</div>
-              {p.stock > 0 && <div className='text-xs mt-1' style={{ color: '#2F7A4C' }}>{p.stock} listos</div>}
-              {carrito[p.id] > 0 && <span className='absolute top-2 right-2 rounded-full text-xs font-bold text-white px-2 py-0.5' style={{ background: CARAMELO }}>{carrito[p.id]}</span>}
-            </button>
-          ))}
+        <div className='grid gap-3' style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+          {productos.map(p => {
+            const nueces = Object.keys(p.receta || {}).map(nombreNuez)
+            const fondo = nueces.length > 1 ? `linear-gradient(135deg, ${nueces.map(colorNuez).join(', ')})` : nueces.length ? colorNuez(nueces[0]) : '#CFE3C9'
+            const [titulo, pres] = p.nombre.split(' · ')
+            return (
+              <button key={p.id} onClick={() => sumar(p.id, 1)} className='bg-white rounded-2xl overflow-hidden text-left shadow-sm relative flex flex-col' style={{ border: carrito[p.id] ? `3px solid ${CARAMELO}` : '1px solid #E7D9C6' }}>
+                <div className='flex items-center justify-center' style={{ background: fondo, height: 74 }}><Empaque tipo={tipoEmpaque(p.nombre)} color={CARAMELO} size={46} /></div>
+                <div className='p-2.5'>
+                  <div className='font-bold leading-tight'>{titulo}</div>
+                  {pres && <div className='text-xs text-gray-500'>{pres}</div>}
+                  <div className='text-sm font-semibold mt-1' style={{ color: CARAMELO }}>{pesos(p.precio)}</div>
+                  {p.stock > 0 && <div className='text-[11px]' style={{ color: '#2F7A4C' }}>{p.stock} listos</div>}
+                </div>
+                {carrito[p.id] > 0 && <span className='absolute top-2 right-2 rounded-full text-sm font-bold text-white w-7 h-7 flex items-center justify-center' style={{ background: CARAMELO }}>{carrito[p.id]}</span>}
+              </button>
+            )
+          })}
         </div>
       </section>
 
